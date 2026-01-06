@@ -1,8 +1,8 @@
-
 import streamlit as st
 import pandas as pd
 import io
 import time
+import zipfile # 引入zip库用于批量下载
 
 # ==========================================
 # 1. 系统配置与强制深色极简皮肤
@@ -25,7 +25,8 @@ st.markdown("""
         --card-border: #333333;
         --btn-bg: #ffffff;
         --btn-text: #000000;
-        --accent-color: #4ade80; /* 荧光绿 */
+        --accent-color: #4ade80; /* 荧光绿，用于进度条和强调 */
+        --progress-bg: #333333; /* 进度条背景色 */
         --error-color: #ef4444;
     }
 
@@ -60,9 +61,14 @@ st.markdown("""
         box-shadow: 0 0 8px rgba(255, 255, 255, 0.3);
     }
     
-    /* 进度条修复 */
+    /* --- 进度条修复 (改动点 1) --- */
+    /* 已完成部分的颜色 */
     .stProgress > div > div > div > div {
         background-color: var(--accent-color) !important;
+    }
+    /* 未完成部分(背景)的颜色 */
+    .stProgress > div > div {
+        background-color: var(--progress-bg) !important;
     }
 
     /* 上传组件边框 */
@@ -183,7 +189,7 @@ if df_a is not None and df_b is not None:
         
         progress_bar = st.progress(0)
         status_text = st.empty()
-        error_msgs = [] # 用于收集所有错误信息
+        error_msgs = []
 
         try:
             # --- 阶段 1: 强制数据完整性校验 ---
@@ -191,28 +197,27 @@ if df_a is not None and df_b is not None:
             time.sleep(0.2)
             progress_bar.progress(10)
 
-            # 1. 校验 表B SPM (原有)
+            # 1. 校验 表B SPM
             missing_spm_b = df_b[map_b['spm']].isnull().sum()
             if missing_spm_b > 0:
                 error_msgs.append(f"❌ 表B 错误：发现 {missing_spm_b} 条缺少 [SPM编号] 的数据")
 
-            # 2. 校验 表A 合同主体 (新增)
+            # 2. 校验 表A 合同主体
             missing_contract_a = df_a[map_a['contract']].isnull().sum()
             if missing_contract_a > 0:
                 error_msgs.append(f"❌ 表A 错误：发现 {missing_contract_a} 条缺少 [合同主体] 的数据")
 
-            # 3. 校验 表A 交付工时 (新增)
+            # 3. 校验 表A 交付工时
             missing_hours_a = df_a[map_a['hours']].isnull().sum()
             if missing_hours_a > 0:
                 error_msgs.append(f"❌ 表A 错误：发现 {missing_hours_a} 条缺少 [交付工时] 的数据")
 
-            # 如果有任何错误，统一显示并阻断
             if error_msgs:
                 progress_bar.empty()
                 status_text.empty()
                 for msg in error_msgs:
                     st.error(msg)
-                st.stop() # 强制停止后续逻辑
+                st.stop()
             
             # --- 阶段 2: 清洗 ---
             status_text.text("校验全部通过！正在清洗数据...")
@@ -290,18 +295,39 @@ if df_a is not None and df_b is not None:
 if st.session_state.results is not None:
     st.divider()
     st.markdown("### 4. 报表下载")
-    st.success("报表已就绪。点击下方按钮下载（无需重复生成）。")
+    # (改动点 2: 移除了成功的提示框)
 
+    results = st.session_state.results
+
+    # Excel 转换函数
+    def to_excel(df):
+        output = io.BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df.to_excel(writer, index=False)
+        return output.getvalue()
+
+    # --- (改动点 3: 新增批量下载) ---
+    def create_zip(results_dict):
+        zip_buffer = io.BytesIO()
+        with zipfile.ZipFile(zip_buffer, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            zip_file.writestr("结果表1_工时统计.xlsx", to_excel(results_dict['t1']))
+            zip_file.writestr("结果表2_结算单.xlsx", to_excel(results_dict['t2']))
+            zip_file.writestr("结果表3_结算明细.xlsx", to_excel(results_dict['t3']))
+        return zip_buffer.getvalue()
+
+    st.download_button(
+        label="📦 批量下载所有报表 (ZIP)",
+        data=create_zip(results),
+        file_name="淡藤财务报表汇总.zip",
+        mime="application/zip",
+        use_container_width=True,
+        type="primary"
+    )
+    st.markdown("<br>", unsafe_allow_html=True) # 加点间距
+
+    # 单独下载区域
     with st.container(border=True):
         d1, d2, d3 = st.columns(3)
-        results = st.session_state.results
-        
-        def to_excel(df):
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df.to_excel(writer, index=False)
-            return output.getvalue()
-
         with d1:
             st.download_button("📥 结果表1 (工时)", to_excel(results['t1']), "结果表1.xlsx", use_container_width=True)
         with d2:
