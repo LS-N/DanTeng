@@ -3,86 +3,96 @@ import pandas as pd
 import io
 import time
 import zipfile
-from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode, DataReturnMode
+from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
 
 # ==========================================
-# 0. 基础配置 (不可见部分)
+# 0. 基础配置
 # ==========================================
 st.set_page_config(page_title="淡藤财务报表 Pro", page_icon="😈", layout="wide", initial_sidebar_state="collapsed")
 
-# 强制深色极简 CSS
+# 强制深色极简 CSS (优化了卡片间距)
 st.markdown("""
 <style>
     :root { --bg-color: #000000; --accent-color: #4ade80; --error-color: #ef4444; }
     .stApp { background-color: var(--bg-color); color: #ffffff; }
     
     /* 1. 头部样式 */
-    h1 { font-size: 2.5rem !important; font-weight: 800 !important; margin-bottom: 0rem !important; }
-    .stCaption { font-size: 1rem !important; opacity: 0.7; margin-bottom: 2rem !important; }
+    h1 { font-size: 2.2rem !important; font-weight: 800 !important; color: #fff; }
+    .stCaption { font-size: 0.9rem !important; opacity: 0.7; }
     
     /* 2. 按钮样式 */
-    .stButton > button { border: 1px solid #ffffff; color: #000000; background: #ffffff; font-weight: bold; }
-    .stButton > button:hover { box-shadow: 0 0 10px rgba(74, 222, 128, 0.6); transform: scale(1.01); }
+    .stButton > button { 
+        border: 1px solid #ffffff; color: #000000; background: #ffffff; font-weight: bold; 
+        transition: all 0.3s ease;
+    }
+    .stButton > button:hover { 
+        box-shadow: 0 0 15px rgba(74, 222, 128, 0.8); transform: scale(1.02); background: var(--accent-color); border-color: var(--accent-color);
+    }
     
-    /* 3. 错误提示区 */
-    .error-box { border: 1px solid var(--error-color); background: rgba(239, 68, 68, 0.1); padding: 1.5rem; border-radius: 8px; margin: 1rem 0; }
-    
-    /* 4. 进度条 */
+    /* 3. 进度条自定义 */
     .stProgress > div > div > div > div { background-color: var(--accent-color) !important; }
     
-    /* 5. 隐藏多余的组件边框 */
-    div[data-testid="stFileUploader"] { background-color: #121212; border: 1px dashed #333; }
+    /* 4. 分区卡片优化 */
+    div[data-testid="stVerticalBlock"] > div[data-testid="stVerticalBlock"] {
+        gap: 1.5rem; /* 增加组件垂直间距 */
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 1. 头部信息区 (Header Zone)
+# 1. 头部与侧边栏
 # ==========================================
 st.title("😈 淡藤财务报表 Pro")
-st.caption("Minimalist Financial Settlement System | Error Traceability & Auto-Calculation")
+st.caption("Minimalist Financial Settlement System")
 
-# 侧边栏参数 (隐藏不干扰主视觉)
 with st.sidebar:
     st.header("⚙️ 参数设置")
     PRICE_PER_DAY = st.number_input("人力单价 (元/天)", 1500)
     SUBSIDY_TAG = st.text_input("补助关键词", "差旅补助")
 
 # ==========================================
-# 2. 交互核心区 (Interaction Zone)
+# 2. 数据输入区 (卡片化)
 # ==========================================
-# 状态初始化
-if 'df_a_state' not in st.session_state: st.session_state.df_a_state = None
-if 'df_b_state' not in st.session_state: st.session_state.df_b_state = None
-if 'file_a_id' not in st.session_state: st.session_state.file_a_id = None
-if 'file_b_id' not in st.session_state: st.session_state.file_b_id = None
+# 使用 container(border=True) 制造视觉分区
+with st.container(border=True):
+    st.markdown("### 📂 数据源上传")
+    
+    # 状态初始化
+    if 'df_a_state' not in st.session_state: st.session_state.df_a_state = None
+    if 'df_b_state' not in st.session_state: st.session_state.df_b_state = None
+    if 'file_a_id' not in st.session_state: st.session_state.file_a_id = None
+    if 'file_b_id' not in st.session_state: st.session_state.file_b_id = None
 
-# 文件上传 (并排布局)
-col_up1, col_up2 = st.columns(2)
-with col_up1:
-    f_a = st.file_uploader("Source A: 交付明细 (拖入文件)", type=['xlsx', 'csv'], key='f_a')
-with col_up2:
-    f_b = st.file_uploader("Source B: 差旅明细 (拖入文件)", type=['xlsx', 'csv'], key='f_b')
+    col_up1, col_up2 = st.columns(2)
+    with col_up1:
+        f_a = st.file_uploader("Source A: 交付明细", type=['xlsx', 'csv'], key='f_a')
+    with col_up2:
+        f_b = st.file_uploader("Source B: 差旅明细", type=['xlsx', 'csv'], key='f_b')
 
-# 数据加载函数
-def init_df(file, key_id, state_key):
-    if file and file.file_id != st.session_state[key_id]:
-        try:
-            if file.name.endswith('.csv'): df = pd.read_csv(file)
-            else: df = pd.read_excel(file)
-            df.columns = [str(c).strip() for c in df.columns]
-            st.session_state[state_key] = df
-            st.session_state[key_id] = file.file_id
-        except Exception as e:
-            st.error(f"读取失败: {e}")
+    # 数据读取
+    def init_df(file, key_id, state_key):
+        if file and file.file_id != st.session_state[key_id]:
+            try:
+                if file.name.endswith('.csv'): df = pd.read_csv(file)
+                else: df = pd.read_excel(file)
+                df.columns = [str(c).strip() for c in df.columns]
+                st.session_state[state_key] = df
+                st.session_state[key_id] = file.file_id
+            except Exception as e:
+                st.error(f"读取失败: {e}")
 
-init_df(f_a, 'file_a_id', 'df_a_state')
-init_df(f_b, 'file_b_id', 'df_b_state')
+    init_df(f_a, 'file_a_id', 'df_a_state')
+    init_df(f_b, 'file_b_id', 'df_b_state')
 
-# --- 逻辑处理与动态反馈 ---
+# ==========================================
+# 3. 逻辑处理核心区
+# ==========================================
 if st.session_state.df_a_state is not None and st.session_state.df_b_state is not None:
     
-    # 占位符：用于展示进度或状态，防止界面跳动
-    status_container = st.container()
+    # --- 统一进度条 ---
+    # 放在输入区下方，作为连接输入和输出的桥梁
+    st.divider()
+    progress_bar = st.progress(0, text="等待开始...")
     
     # 辅助函数：列名查找
     def find_col(df, candidates):
@@ -133,42 +143,32 @@ if st.session_state.df_a_state is not None and st.session_state.df_b_state is no
         if errors: return False, pd.DataFrame(errors), final_map
         return True, None, final_map
 
-    # 执行映射与校验
+    # --- 阶段 1: 校验 (进度 0% -> 30%) ---
+    progress_bar.progress(30, text="🔄 正在校验数据完整性...")
+    
     map_a = auto_map_cols(st.session_state.df_a_state, 'A')
     map_b = auto_map_cols(st.session_state.df_b_state, 'B')
     
-    with status_container:
-        st.write("🔄 正在自动校验数据完整性...")
-        valid_a, err_a, final_map_a = validate_and_trace(st.session_state.df_a_state, "表A", map_a)
-        valid_b, err_b, final_map_b = validate_and_trace(st.session_state.df_b_state, "表B", map_b)
-        all_errors = pd.concat([err_a, err_b], ignore_index=True) if (err_a is not None or err_b is not None) else None
+    valid_a, err_a, final_map_a = validate_and_trace(st.session_state.df_a_state, "表A", map_a)
+    valid_b, err_b, final_map_b = validate_and_trace(st.session_state.df_b_state, "表B", map_b)
+    all_errors = pd.concat([err_a, err_b], ignore_index=True) if (err_a is not None or err_b is not None) else None
 
-    # [场景 A] 异常态：显示修复工具
+    # [校验失败分支]
     if all_errors is not None and not all_errors.empty:
-        status_container.empty() # 清除"正在校验"文字
+        progress_bar.progress(0, text="🚨 校验失败，请修复下方数据")
         
-        st.markdown(f"""
-        <div class="error-box">
-            <h3 style="color:#ef4444; margin:0">🚨 校验失败：发现 {len(all_errors)} 处数据异常</h3>
-            <p style="margin-top:0.5rem">请在下方表格直接修正空值，红色列为必填项。</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.error(f"发现 {len(all_errors)} 处数据异常，请修正后点击保存：")
         
-        # 错误清单下载
-        csv_buffer = io.BytesIO()
-        all_errors.to_excel(csv_buffer, index=False)
-        st.download_button("📥 下载错误清单 (Excel)", csv_buffer, "错误清单.xlsx")
-
-        # Ag-Grid 编辑器
+        # 错误修正区
+        col_e1, col_e2 = st.columns(2)
+        new_df_a, new_df_b = None, None
+        
         def show_editor(df, key):
             gb = GridOptionsBuilder.from_dataframe(df)
             gb.configure_default_column(editable=True, resizable=True)
             gb.configure_selection('single')
             return AgGrid(df, gridOptions=gb.build(), update_mode=GridUpdateMode.MANUAL, height=250, theme='balham', key=key)
 
-        col_e1, col_e2 = st.columns(2)
-        new_df_a, new_df_b = None, None
-        
         with col_e1:
             if not valid_a:
                 st.caption("🔴 表A 修正区")
@@ -185,37 +185,34 @@ if st.session_state.df_a_state is not None and st.session_state.df_b_state is no
             if new_df_b is not None: st.session_state.df_b_state = pd.DataFrame(new_df_b)
             st.rerun()
             
-        st.stop() # 🛑 阻断后续代码，不显示下载区
+        st.stop() # 阻断后续运行
 
-    # [场景 B] 运行态 -> 结果态
-    status_container.empty()
-    st.success("✅ 数据校验通过！正在生成报表...")
-    progress_bar = st.progress(0)
+    # --- 阶段 2: 计算 (进度 30% -> 80%) ---
+    progress_bar.progress(60, text="⚡ 校验通过 | 正在进行核心计算...")
+    time.sleep(0.5) # 稍微停顿让用户看清状态变化（可选）
     
     try:
-        # --- 计算核心逻辑 ---
+        # 数据拷贝与清洗
         df_a = st.session_state.df_a_state.copy()
         df_b = st.session_state.df_b_state.copy()
         
-        # 清洗
         def clean_num(df, col): return pd.to_numeric(df[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
         df_a[final_map_a['hours']] = clean_num(df_a, final_map_a['hours'])
         df_b[final_map_b['amount']] = clean_num(df_b, final_map_b['amount'])
-        progress_bar.progress(30)
         
-        # 聚合
+        # 聚合逻辑
         agg = {final_map_a['hours']: 'sum'}
         for k in ['project', 'range', 'contract', 'sales', 'dept']: 
             if final_map_a[k]: agg[final_map_a[k]] = 'first'
         df_a_gp = df_a.groupby([final_map_a['user'], final_map_a['spm']], as_index=False).agg(agg)
         
-        # 拆分与合并
+        # 费用计算
         is_sub = df_b[final_map_b['type']].astype(str).str.contains(SUBSIDY_TAG, na=False)
         grp_b = [final_map_b['user'], final_map_b['spm']]
         df_sub = df_b[is_sub].groupby(grp_b)[final_map_b['amount']].sum().reset_index(name='差旅补助')
         df_fee = df_b[~is_sub].groupby(grp_b)[final_map_b['amount']].sum().reset_index(name='差旅费控平台')
         
-        # 统一类型以合并
+        # Merge前统一类型
         key_cols = [final_map_a['user'], final_map_a['spm']]
         df_a_gp[final_map_a['spm']] = df_a_gp[final_map_a['spm']].astype(str)
         df_sub[final_map_b['spm']] = df_sub[final_map_b['spm']].astype(str)
@@ -225,13 +222,12 @@ if st.session_state.df_a_state is not None and st.session_state.df_b_state is no
         res = pd.merge(res, df_fee, left_on=key_cols, right_on=[final_map_b['user'], final_map_b['spm']], how='left')
         res = res.fillna(0)
         
-        # 计算金额
+        # 最终计算
         res['支持时间'] = res[final_map_a['hours']] / 8
         res['人力费用'] = res['支持时间'] * PRICE_PER_DAY
         res['结算费用合计'] = res['人力费用'] + res['差旅补助'] + res['差旅费控平台']
-        progress_bar.progress(80)
-
-        # 格式化输出
+        
+        # 格式化输出 (表3)
         rename_map = {
             key_cols[0]: '人员', final_map_a['project']: '所属项目', final_map_a['range']: '人事范围',
             key_cols[1]: 'SPM', final_map_a['contract']: '合同主体', final_map_a['sales']: '销售人员',
@@ -244,7 +240,7 @@ if st.session_state.df_a_state is not None and st.session_state.df_b_state is no
         t3.rename(columns={'支持时间': '支持时间（人天）'}, inplace=True)
         t3.insert(0, '序号', range(1, len(t3)+1))
         
-        # 表2
+        # (表2) 结算表
         t2_cols = ['人事范围', '合同主体', '销售部门']
         if all(c in t3.columns for c in t2_cols):
             t2 = t3.groupby(t2_cols).agg({'结算费用合计': 'sum', '支持时间（人天）': 'sum'}).reset_index()
@@ -252,21 +248,16 @@ if st.session_state.df_a_state is not None and st.session_state.df_b_state is no
             t2.insert(0, '序号', range(1, len(t2)+1))
         else: t2 = pd.DataFrame({'提示': ['缺少维度字段']})
         
-        # 表1
+        # (表1) 工时表
         t1 = t3.groupby('人员')['耗时（小时）'].sum().reset_index()
         t1.rename(columns={'耗时（小时）': '项目工时'}, inplace=True)
         t1.insert(0, '序号', range(1, len(t1)+1))
         
-        progress_bar.progress(100)
-        time.sleep(0.3)
-        progress_bar.empty()
-
-        # ==========================================
-        # 3. 结果交付区 (Result Zone)
-        # ==========================================
-        st.divider() # 显眼的分割线
+        progress_bar.progress(90, text="📦 正在打包下载文件...")
         
-        # 准备二进制流
+        # --- 阶段 3: 输出结果 (进度 100%) ---
+        
+        # 生成二进制流
         def to_bytes(df):
             out = io.BytesIO()
             with pd.ExcelWriter(out, engine='xlsxwriter') as w: df.to_excel(w, index=False)
@@ -275,25 +266,35 @@ if st.session_state.df_a_state is not None and st.session_state.df_b_state is no
         b1, b2, b3 = to_bytes(t1), to_bytes(t2), to_bytes(t3)
         z_out = io.BytesIO()
         with zipfile.ZipFile(z_out, 'w', zipfile.ZIP_DEFLATED) as z:
-            z.writestr("表1_工时.xlsx", b1)
-            z.writestr("表2_结算.xlsx", b2)
-            z.writestr("表3_明细.xlsx", b3)
+            z.writestr("表1_工时统计.xlsx", b1)
+            z.writestr("表2_结算汇总.xlsx", b2)
+            z.writestr("表3_详细明细.xlsx", b3)
 
-        # 布局：大按钮在上，小按钮在下
-        st.download_button(
-            label="📦 批量下载所有报表 (ZIP)",
-            data=z_out.getvalue(),
-            file_name="淡藤财务报表汇总.zip",
-            mime="application/zip",
-            type="primary",
-            use_container_width=True
-        )
+        progress_bar.progress(100, text="✅ 报表生成完毕！")
         
-        st.caption("或单独下载：")
-        d1, d2, d3 = st.columns(3)
-        d1.download_button("📥 表1 (工时)", b1, "表1.xlsx", use_container_width=True)
-        d2.download_button("📥 表2 (结算)", b2, "表2.xlsx", use_container_width=True)
-        d3.download_button("📥 表3 (明细)", b3, "表3.xlsx", use_container_width=True)
+        # ==========================================
+        # 4. 结果展示区 (卡片化)
+        # ==========================================
+        # 只有在 100% 后才渲染此区域，解决"未生成先显示"的问题
+        with st.container(border=True):
+            st.markdown("### 📥 报表下载")
+            
+            st.download_button(
+                label="📦 批量下载所有报表 (ZIP)",
+                data=z_out.getvalue(),
+                file_name="淡藤财务报表汇总.zip",
+                mime="application/zip",
+                type="primary",
+                use_container_width=True
+            )
+            
+            st.markdown("---") # 分割线
+            
+            cols_d = st.columns(3)
+            # 修复了文件名重复的问题
+            cols_d[0].download_button("📥 表1 (工时)", b1, "表1_工时统计.xlsx", use_container_width=True)
+            cols_d[1].download_button("📥 表2 (结算)", b2, "表2_结算汇总.xlsx", use_container_width=True)
+            cols_d[2].download_button("📥 表3 (明细)", b3, "表3_详细明细.xlsx", use_container_width=True)
 
     except Exception as e:
         st.error(f"计算过程发生未知错误: {e}")
