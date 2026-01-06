@@ -1,179 +1,214 @@
-import React, { useState, useEffect } from 'react';
-import { Play, AlertCircle, CheckCircle, RotateCcw } from 'lucide-react';
+import streamlit as st
+import json
+import time
 
-const ExecutionComponent = () => {
-  // 状态管理：idle(空闲), running(运行中), success(成功), error(失败)
-  const [status, setStatus] = useState('idle');
-  const [progress, setProgress] = useState(0);
-  const [errorMsg, setErrorMsg] = useState('');
-  
-  // 模拟的数据输入 (用于在线编辑)
-  const [inputData, setInputData] = useState(JSON.stringify({
-    "task_name": "测试任务",
-    "target": "" // 故意留空用于演示报错
-  }, null, 4));
+# --- 1. 初始化状态 (Session State) ---
+if 'status' not in st.session_state:
+    st.session_state.status = 'idle'  # 状态: idle, running, success, error
+if 'progress' not in st.session_state:
+    st.session_state.progress = 0
+if 'error_msg' not in st.session_state:
+    st.session_state.error_msg = ''
+if 'error_line' not in st.session_state:
+    st.session_state.error_line = None
 
-  // 运行/校验逻辑
-  const handleRun = () => {
-    // 1. 重置状态
-    setStatus('running');
-    setProgress(0);
-    setErrorMsg('');
+# --- 2. 核心逻辑函数 ---
 
-    // 模拟加载过程
-    let currentProgress = 0;
-    const interval = setInterval(() => {
-      currentProgress += 10;
-      setProgress(currentProgress);
-
-      if (currentProgress >= 100) {
-        clearInterval(interval);
-        validateData(); // 加载完后进行校验
-      }
-    }, 50); // 速度快一点
-  };
-
-  // 校验逻辑
-  const validateData = () => {
-    try {
-      const parsed = JSON.parse(inputData);
-      
-      // 模拟校验规则：必须有 target 字段且不为空
-      if (!parsed.target) {
-        throw new Error("校验失败: 'target' 字段不能为空。请在下方编辑器中修正。");
-      }
-
-      // 校验通过
-      setStatus('success');
-    } catch (err) {
-      // 校验不通过
-      setStatus('error');
-      setErrorMsg(err.message || "JSON 格式错误");
-      setProgress(0); // 进度条归零或保持黑色背景
-    }
-  };
-
-  // 重置
-  const handleReset = () => {
-    setStatus('idle');
-    setProgress(0);
-    setErrorMsg('');
-  };
-
-  return (
-    <div className="w-full max-w-2xl mx-auto p-6 space-y-6">
-      
-      {/* 标题 */}
-      <div className="text-gray-700 font-bold text-lg">执行控制台</div>
-
-      {/* --- 核心进度条区域 --- */}
-      <div className="relative w-full h-12 rounded-lg overflow-hidden shadow-lg border border-gray-800">
+def run_validation():
+    """点击运行按钮后的逻辑"""
+    # 重置状态
+    st.session_state.status = 'running'
+    st.session_state.error_msg = ''
+    st.session_state.error_line = None
+    st.session_state.progress = 0
+    
+    # 模拟加载进度条动画 (黑色背景 -> 绿色增长)
+    bar_slot = st.empty()
+    for i in range(101):
+        st.session_state.progress = i
+        # 强制刷新UI来实现动画效果 (在Streamlit中通常自动处理，这里为了模拟进度)
+        time.sleep(0.01) 
+    
+    # 执行校验逻辑
+    input_text = st.session_state.get('code_input', '')
+    
+    try:
+        # A. 尝试解析 JSON
+        data = json.loads(input_text)
         
-        {/* 1. 背景层 (默认黑色) */}
-        <div className="absolute inset-0 bg-black z-0"></div>
-
-        {/* 2. 进度/成功层 (绿色) 
-            逻辑：只有在 running 或 success 时显示，宽度动态变化
-        */}
-        <div 
-          className="absolute inset-0 bg-green-500 z-10 transition-all duration-300 ease-out"
-          style={{ width: `${status === 'error' ? 0 : progress}%` }}
-        ></div>
-
-        {/* 3. 内容交互层 (按钮和文字) - 必须置于最顶层 (z-20) */}
-        <div className="absolute inset-0 z-20 flex items-center px-4 justify-between">
-          
-          {/* 左侧：运行按钮 / 状态图标 */}
-          <button 
-            onClick={status === 'idle' || status === 'error' ? handleRun : undefined}
-            disabled={status === 'running' || status === 'success'}
-            className="flex items-center gap-2 focus:outline-none group"
-          >
-            {/* 图标逻辑切换 */}
-            {status === 'running' && (
-               <span className="animate-spin text-white">⏳</span>
-            )}
-
-            {status === 'idle' && (
-              <>
-                <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center group-hover:bg-white/40 transition">
-                  <Play className="w-4 h-4 text-white fill-current" />
-                </div>
-                <span className="text-white font-mono text-sm">点击运行</span>
-              </>
-            )}
-
-            {status === 'success' && (
-              <>
-                <CheckCircle className="w-6 h-6 text-white" />
-                <span className="text-white font-bold">执行成功</span>
-              </>
-            )}
-
-            {/* 失败状态：显示感叹号 */}
-            {status === 'error' && (
-              <>
-                <div className="w-8 h-8 rounded-full bg-red-600 flex items-center justify-center animate-pulse">
-                  <AlertCircle className="w-5 h-5 text-white" />
-                </div>
-                <span className="text-red-500 font-bold ml-2">校验未通过</span>
-              </>
-            )}
-          </button>
-
-          {/* 右侧：重置按钮 (仅在结束状态显示) */}
-          {(status === 'success' || status === 'error') && (
-            <button 
-              onClick={handleReset}
-              className="text-white/70 hover:text-white flex items-center gap-1 text-sm"
-            >
-              <RotateCcw className="w-4 h-4" /> 重置
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* --- 错误提示区域 --- */}
-      {status === 'error' && (
-        <div className="p-4 bg-red-50 border-l-4 border-red-500 text-red-700 rounded animate-fade-in-down">
-          <p className="font-bold">Execution Failed</p>
-          <p className="text-sm">{errorMsg}</p>
-        </div>
-      )}
-
-      {/* --- 在线数据编辑 & 可视化定位 --- */}
-      <div className="space-y-2">
-        <div className="flex justify-between items-center">
-          <label className="text-sm font-semibold text-gray-600">数据配置 (JSON)</label>
-          <span className="text-xs text-gray-400">支持在线编辑实时生效</span>
-        </div>
+        # B. 业务逻辑校验：比如必须包含 'target' 字段且不为空
+        if not data.get('target'):
+            raise ValueError("业务规则校验失败: 缺少 'target' 字段或值为空。")
+            
+        # C. 通过
+        st.session_state.status = 'success'
         
-        <div className="relative">
-          <textarea
-            value={inputData}
-            onChange={(e) => {
-              setInputData(e.target.value);
-              if (status === 'error') setStatus('idle'); // 编辑时重置错误状态
-            }}
-            className={`w-full h-48 p-4 font-mono text-sm bg-gray-50 rounded-lg border-2 focus:outline-none transition-colors resize-none
-              ${status === 'error' 
-                ? 'border-red-500 bg-red-50/10'  // 错误时：边框变红
-                : 'border-gray-200 focus:border-blue-500' // 正常时：灰色/蓝色
-              }`}
-            spellCheck="false"
-          />
-          
-          {/* 可视化定位提示 (简单的模拟) */}
-          {status === 'error' && inputData.includes('"target": ""') && (
-            <div className="absolute top-[4.5rem] right-4 text-xs text-red-500 bg-white px-2 py-1 rounded shadow border border-red-200">
-              👈 错误定位: 值不能为空
-            </div>
-          )}
-        </div>
-      </div>
+    except json.JSONDecodeError as e:
+        # JSON 格式错误，定位行号
+        st.session_state.status = 'error'
+        st.session_state.error_msg = f"语法错误: {e.msg}"
+        st.session_state.error_line = e.lineno # 获取错误行号
+        
+    except Exception as e:
+        # 其他业务逻辑错误
+        st.session_state.status = 'error'
+        st.session_state.error_msg = str(e)
 
+def reset():
+    st.session_state.status = 'idle'
+    st.session_state.progress = 0
+    st.session_state.error_msg = ''
+    st.session_state.error_line = None
+
+# --- 3. 页面布局与自定义 CSS (关键部分) ---
+
+st.title("轩辕数据湖 - 任务执行控制台")
+
+# 这里使用 CSS 注入来完美还原你要求的“黑色背景进度条”
+# Streamlit 原生进度条是蓝色的，所以我们手写一段 HTML/CSS
+status = st.session_state.status
+progress_width = st.session_state.progress if status != 'error' else 0
+bar_color = "#22c55e" if status == 'success' else "#22c55e" # 绿色
+
+# 定义图标和颜色逻辑
+if status == 'idle':
+    icon = "▶" # 播放
+    btn_color = "white"
+    msg = "点击运行"
+elif status == 'running':
+    icon = "⏳" 
+    btn_color = "white"
+    msg = "执行中..."
+elif status == 'success':
+    icon = "✔"
+    btn_color = "white"
+    msg = "执行成功"
+elif status == 'error':
+    icon = "❗" # 警告感叹号
+    btn_color = "#ef4444" # 红色
+    msg = "校验未通过"
+
+# 渲染自定义进度条 HTML
+st.markdown(f"""
+<style>
+    .custom-bar-container {{
+        position: relative;
+        width: 100%;
+        height: 50px;
+        background-color: black; /* 默认黑色背景 */
+        border-radius: 8px;
+        overflow: hidden;
+        margin-bottom: 20px;
+        display: flex;
+        align-items: center;
+        cursor: pointer;
+        border: 1px solid #333;
+    }}
+    .progress-fill {{
+        position: absolute;
+        height: 100%;
+        width: {progress_width}%; 
+        background-color: {bar_color}; /* 校验通过变绿 */
+        transition: width 0.3s ease;
+        z-index: 1;
+    }}
+    .content-layer {{
+        position: relative;
+        z-index: 2;
+        display: flex;
+        align-items: center;
+        padding-left: 20px;
+        color: white;
+        font-family: monospace;
+        font-weight: bold;
+        width: 100%;
+    }}
+    .icon-box {{
+        width: 30px;
+        height: 30px;
+        border-radius: 50%;
+        background: rgba(255,255,255,0.2);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        margin-right: 10px;
+        color: {btn_color};
+    }}
+    /* 失败时的红色光晕动画 */
+    .error-pulse {{
+        box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+        animation: pulse-red 1.5s infinite;
+        background: #ef4444; 
+    }}
+    @keyframes pulse-red {{
+        0% {{ transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }}
+        70% {{ transform: scale(1); box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }}
+        100% {{ transform: scale(0.95); box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }}
+    }}
+</style>
+
+<div class="custom-bar-container">
+    <div class="progress-fill"></div>
+    <div class="content-layer">
+        <div class="icon-box {'error-pulse' if status == 'error' else ''}">
+            {icon}
+        </div>
+        <span>{msg}</span>
     </div>
-  );
-};
+</div>
+""", unsafe_allow_html=True)
 
-export default ExecutionComponent;
+# 真实的触发按钮 (隐藏在逻辑中或放在上方，为了交互方便，我们用 Streamlit 原生按钮来触发逻辑)
+col1, col2 = st.columns([1, 4])
+with col1:
+    # 这里的按钮用于触发 Python 逻辑
+    if st.button("开始执行 (Run)", disabled=(status=='running')):
+        run_validation()
+        st.rerun() # 强制刷新以显示进度条变化
+with col2:
+    if status in ['success', 'error']:
+        if st.button("重置 (Reset)"):
+            reset()
+            st.rerun()
+
+# --- 4. 错误信息展示 ---
+if status == 'error':
+    st.error(f"❌ 失败原因: {st.session_state.error_msg}")
+
+# --- 5. 在线编辑数据 & 可视化定位 ---
+st.subheader("在线数据编辑")
+
+# 默认数据
+default_json = """{
+    "task_id": 1001,
+    "task_name": "数据清洗_V1",
+    "target": "" 
+}"""
+
+# 计算 Text Area 的高度和样式
+# 如果出错，我们尝试在 label 处提示
+label_text = "JSON 配置"
+if st.session_state.error_line:
+    label_text += f" (👉 错误可能在第 {st.session_state.error_line} 行附近)"
+
+# 输入框
+code = st.text_area(
+    label=label_text,
+    value=st.session_state.get('code_input', default_json),
+    height=200,
+    key='code_input',
+    help="在这里直接修改 JSON，然后点击上方运行。"
+)
+
+# 可视化定位：如果出错，我们在下方显示一个带行号的“代码快照”，高亮错误行
+if status == 'error' and st.session_state.error_line:
+    st.warning("🔍 错误定位分析：")
+    lines = code.split('\n')
+    
+    # 简单的可视化：打印出每一行，并在错误行加箭头
+    for idx, line in enumerate(lines):
+        line_num = idx + 1
+        if line_num == st.session_state.error_line:
+            st.markdown(f"**Line {line_num}:** `{line}` 👈 <span style='color:red'>**HERE**</span>", unsafe_allow_html=True)
+        else:
+            st.markdown(f"<span style='color:gray'>Line {line_num}: {line}</span>", unsafe_allow_html=True)
