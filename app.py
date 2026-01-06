@@ -4,172 +4,155 @@ import io
 import time
 
 # ==========================================
-# 1. 状态初始化与主题引擎
+# 1. 系统配置与黑白极简皮肤
 # ==========================================
 st.set_page_config(
-    page_title="淡藤财务财务报表",
-    page_icon="😈",  # <--- 已修改为小恶魔
+    page_title="淡藤财务报表",
+    page_icon="😈", 
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# 初始化主题状态 (默认为浅色 'light')
+# 状态管理
 if 'theme' not in st.session_state:
     st.session_state.theme = 'light'
 
 def toggle_theme():
-    if st.session_state.theme == 'light':
-        st.session_state.theme = 'dark'
-    else:
-        st.session_state.theme = 'light'
+    st.session_state.theme = 'dark' if st.session_state.theme == 'light' else 'light'
 
-# --- 定义两套皮肤的 CSS 变量 ---
-# 浅色模式 (Light)
+# --- 极简黑白 CSS 变量 ---
 theme_light = """
-    --bg-color: #f8f9fc;
-    --text-color: #2c3e50;
+    --bg-color: #ffffff;
+    --text-color: #000000;
     --card-bg: #ffffff;
-    --card-border: #e2e8f0;
-    --primary-color: #6366f1;
-    --accent-color: #818cf8;
-    --mapping-line: #cbd5e1;
-    --console-bg: #1e293b;
-    --console-text: #10b981;
+    --card-border: #e5e5e5;
+    --btn-bg: #000000;
+    --btn-text: #ffffff;
+    --success-bg: #f4f4f5;
 """
 
-# 深色模式 (Dark)
 theme_dark = """
-    --bg-color: #0f172a;
-    --text-color: #e2e8f0;
-    --card-bg: #1e293b;
-    --card-border: #334155;
-    --primary-color: #818cf8;
-    --accent-color: #6366f1;
-    --mapping-line: #475569;
-    --console-bg: #000000;
-    --console-text: #34d399;
+    --bg-color: #000000;
+    --text-color: #ffffff;
+    --card-bg: #121212;
+    --card-border: #333333;
+    --btn-bg: #ffffff;
+    --btn-text: #000000;
+    --success-bg: #1a1a1a;
 """
 
 current_theme = theme_light if st.session_state.theme == 'light' else theme_dark
 
-# 注入动态 CSS
 st.markdown(f"""
 <style>
-    :root {{
-        {current_theme}
-    }}
+    :root {{ {current_theme} }}
 
-    /* 全局应用变量 */
+    /* 全局背景与文字 */
     .stApp {{
         background-color: var(--bg-color);
         color: var(--text-color);
-        transition: background-color 0.3s ease;
     }}
     
-    h1, h2, h3, h4, p, span, div {{
+    h1, h2, h3, p, div, span, label {{
         color: var(--text-color) !important;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     }}
 
-    /* 映射连接器 (科技感) */
-    .connector-row {{
+    /* 极简卡片容器 */
+    .minimal-card {{
+        border: 1px solid var(--card-border);
+        background-color: var(--card-bg);
+        border-radius: 8px;
+        padding: 24px;
+        margin-bottom: 24px;
+    }}
+
+    /* 按钮：黑白反转 */
+    .stButton > button {{
+        background-color: var(--btn-bg);
+        color: var(--btn-text) !important;
+        border: 1px solid var(--btn-bg);
+        border-radius: 4px;
+        padding: 0.5rem 2rem;
+        font-weight: 500;
+        transition: all 0.2s;
+    }}
+    .stButton > button:hover {{
+        opacity: 0.8;
+        border-color: var(--text-color);
+    }}
+    
+    /* 上传组件边框 */
+    div[data-testid="stFileUploader"] {{
+        border: 1px dashed var(--card-border);
+        border-radius: 6px;
+    }}
+
+    /* 顶部导航对齐 */
+    .header-row {{
         display: flex;
         align-items: center;
-        margin-bottom: 12px;
-        position: relative;
+        justify-content: space-between;
+        padding-bottom: 20px;
+        border-bottom: 1px solid var(--card-border);
+        margin-bottom: 30px;
     }}
-    .connector-line {{
-        flex-grow: 1;
-        height: 2px;
-        background: repeating-linear-gradient(
-            90deg,
-            var(--mapping-line),
-            var(--mapping-line) 4px,
-            transparent 4px,
-            transparent 8px
-        );
-        margin: 0 15px;
-        opacity: 0.6;
-    }}
-    .field-label {{
-        background-color: var(--bg-color);
-        padding: 4px 10px;
-        border-radius: 4px;
-        border: 1px solid var(--primary-color);
-        color: var(--primary-color) !important;
-        font-family: 'Courier New', monospace;
-        font-weight: bold;
-        font-size: 0.85rem;
-        white-space: nowrap;
-    }}
-
-    /* 按钮样式 */
-    .stButton>button {{
-        background-color: var(--primary-color);
-        color: white !important;
-        border: none;
-    }}
-    .stButton>button:hover {{
-        opacity: 0.9;
-    }}
-
+    
     /* 侧边栏 */
     section[data-testid="stSidebar"] {{
         background-color: var(--card-bg);
         border-right: 1px solid var(--card-border);
     }}
-    
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 顶部导航栏 (Title + Toggle)
+# 2. 头部 (Header) & 系统介绍
 # ==========================================
-col_header, col_toggle = st.columns([9, 1])
+# 使用 columns 布局头部
+c_head, c_toggle = st.columns([9, 1])
+with c_head:
+    st.markdown("# 😈 淡藤财务报表")
+    st.caption("Minimalist Financial Settlement System")
 
-with col_header:
-    st.markdown("<h1>🍇 淡藤财务财务报表</h1>", unsafe_allow_html=True)
-    st.markdown("<p style='opacity:0.7; margin-top:-10px;'>Automated Financial Settlement System | Enterprise Edition</p>", unsafe_allow_html=True)
-
-with col_toggle:
-    # 切换按钮：小恶魔图标
-    btn_icon = "😈"  # <--- 已修改为小恶魔
-    if st.button(btn_icon, help="切换深色/浅色模式"):
+with c_toggle:
+    # 切换按钮
+    icon = "🌙" if st.session_state.theme == 'light' else "🌞"
+    if st.button(icon, help="切换深色/浅色模式"):
         toggle_theme()
         st.rerun()
 
+# 1. 系统介绍
+st.markdown("### 1. 系统介绍")
+st.markdown("""
+本系统用于自动化合并 **交付明细** 与 **差旅明细**。请按照下方步骤上传文件，
+系统将自动执行字段映射、数据校验，并生成标准的三张结算报表。
+""")
 st.divider()
 
 # ==========================================
-# 3. 侧边栏配置
+# 3. 参数配置 (侧边栏)
 # ==========================================
 with st.sidebar:
-    st.header("🛠️ 参数控制台")
-    
-    PRICE_PER_DAY = st.number_input(
-        "人力单价 (CNY)", 
-        value=1500, step=100
-    )
-    SUBSIDY_TAG = st.text_input(
-        "补助关键词", 
-        value="差旅补助"
-    )
-    st.markdown("---")
-    st.caption("DanTeng Finance System v4.1")
+    st.header("⚙️ 参数设置")
+    PRICE_PER_DAY = st.number_input("人力单价 (元/天)", value=1500, step=100)
+    SUBSIDY_TAG = st.text_input("补助关键词", value="差旅补助")
 
 # ==========================================
-# 4. 文件上传 (使用原生边框容器修复空条BUG)
+# 4. 文件上传区域
 # ==========================================
-# 这里改用了 with st.container(border=True) 替代了之前的 html hack
+st.markdown("### 2. 文件上传")
+
+# 使用原生容器保持整洁
 with st.container(border=True):
-    c1, c2 = st.columns(2)
-    with c1:
-        st.markdown("#### 📂 交付明细 (Source A)")
-        file_a = st.file_uploader("Upload Project Data", type=['xlsx', 'csv'], key='a', label_visibility="collapsed")
-    with c2:
-        st.markdown("#### ✈️ 差旅明细 (Source B)")
-        file_b = st.file_uploader("Upload Travel Data", type=['xlsx', 'csv'], key='b', label_visibility="collapsed")
+    col_a, col_b = st.columns(2)
+    with col_a:
+        st.markdown("**Source A: 交付明细**")
+        file_a = st.file_uploader("拖拽或点击上传", type=['xlsx', 'csv'], key='a', label_visibility="collapsed")
+    with col_b:
+        st.markdown("**Source B: 差旅明细**")
+        file_b = st.file_uploader("拖拽或点击上传", type=['xlsx', 'csv'], key='b', label_visibility="collapsed")
 
-# 读取逻辑
 @st.cache_data(ttl=600)
 def load_data(file):
     if not file: return None
@@ -178,209 +161,163 @@ def load_data(file):
             try: return pd.read_csv(file)
             except: return pd.read_csv(file, encoding='gbk')
         else: return pd.read_excel(file)
-    except Exception as e:
-        st.error(f"Error: {e}")
-        return None
+    except: return None
 
-df_a_raw = load_data(file_a)
-df_b_raw = load_data(file_b)
+df_a = load_data(file_a)
+df_b = load_data(file_b)
 
 # ==========================================
-# 5. 字段映射 (工程感 UI)
+# 5. 报表校验与处理 (核心逻辑)
 # ==========================================
-if df_a_raw is not None and df_b_raw is not None:
+if df_a is not None and df_b is not None:
     
-    # 列名清洗
-    df_a_raw.columns = [str(c).strip() for c in df_a_raw.columns]
-    df_b_raw.columns = [str(c).strip() for c in df_b_raw.columns]
-    cols_a = list(df_a_raw.columns)
-    cols_b = list(df_b_raw.columns)
-
-    def smart_idx(options, keywords):
-        for k in keywords:
-            if k in options: return options.index(k)
-        return 0
-
-    with st.container(border=True):
-        st.subheader("🔗 字段映射配置 (Mapping Topology)")
+    # --- 隐式映射区域 (保持极简，但功能必须有) ---
+    # 清洗列名
+    df_a.columns = [str(c).strip() for c in df_a.columns]
+    df_b.columns = [str(c).strip() for c in df_b.columns]
+    
+    # 简单的两列布局显示映射，不抢眼
+    with st.expander("🛠️ 字段映射设置 (默认已自动匹配，点击展开修改)", expanded=False):
+        mc1, mc2 = st.columns(2)
+        cols_a = list(df_a.columns)
+        cols_b = list(df_b.columns)
         
-        mc1, mc2 = st.columns([1, 1], gap="large")
-
-        # 渲染连接器样式的函数
-        def render_connector(label, key, options, default_keys, prefix):
-            # 使用 HTML/CSS 绘制左侧 Label --虚线--> 右侧 Selectbox
-            c_left, c_right = st.columns([4, 6])
-            with c_left:
-                st.markdown(f"""
-                <div class="connector-row">
-                    <span class="field-label">{label}</span>
-                    <div class="connector-line"></div>
-                </div>
-                """, unsafe_allow_html=True)
-            with c_right:
-                return st.selectbox(
-                    f"Map {label}", options, 
-                    index=smart_idx(options, default_keys), 
-                    key=f"{prefix}_{key}", 
-                    label_visibility="collapsed"
-                )
+        def smart_idx(opts, keys):
+            for k in keys: 
+                if k in opts: return opts.index(k)
+            return 0
 
         with mc1:
-            st.caption("SOURCE A: 交付明细表")
+            st.caption("表A 映射关系")
             map_a = {}
             cfg_a = {
-                'user': ['人员姓名', ['人员', '姓名']],
-                'spm': ['SPM_编号', ['SPM', '标识符']],
-                'hours': ['交付工时', ['交付工时（h）', '工时']],
-                'project': ['项目名称', ['项目', '所属项目']],
-                'range': ['人事范围', ['人事范围']],
-                'contract': ['合同主体', ['合同主体']],
-                'sales': ['销售人员', ['销售', '销售人员']],
-                'dept': ['销售部门', ['销售部门']]
+                'user': ['人员', '姓名'], 'spm': ['SPM', '标识符'], 'hours': ['交付工时', '工时'],
+                'project': ['项目', '所属项目'], 'range': ['人事范围'], 'contract': ['合同主体'],
+                'sales': ['销售', '销售人员'], 'dept': ['销售部门']
             }
             for k, v in cfg_a.items():
-                map_a[k] = render_connector(v[0], k, cols_a, v[1], "a")
-
+                map_a[k] = st.selectbox(f"{k}", cols_a, index=smart_idx(cols_a, v), key=f"a_{k}")
+        
         with mc2:
-            st.caption("SOURCE B: 实施差旅表")
+            st.caption("表B 映射关系")
             map_b = {}
             cfg_b = {
-                'user': ['出差人员', ['出差人', '姓名', '人员']],
-                'spm': ['SPM_编号', ['SPM', '项目编号']],
-                'amount': ['报销金额', ['金额', '总金额']],
-                'type': ['费用类型', ['产品类型', '费用类型']]
+                'user': ['出差人', '姓名'], 'spm': ['SPM', '项目编号'],
+                'amount': ['金额', '总金额'], 'type': ['产品类型', '费用类型']
             }
             for k, v in cfg_b.items():
-                map_b[k] = render_connector(v[0], k, cols_b, v[1], "b")
+                map_b[k] = st.selectbox(f"{k}", cols_b, index=smart_idx(cols_b, v), key=f"b_{k}")
 
-    # ==========================================
-    # 6. 执行引擎
-    # ==========================================
-    if st.button("🚀 初始化计算引擎 (Execute Pipeline)", type="primary", use_container_width=True):
+    st.divider()
+    st.markdown("### 3. 报表校验与生成")
+
+    # 执行按钮
+    if st.button("开始校验并生成报表", use_container_width=True):
         
-        # 控制台样式区域
-        st.markdown(f"""
-        <div style="background-color: var(--console-bg); border:1px solid #333; padding: 15px; border-radius: 8px; margin-bottom: 20px;">
-            <div style="color: var(--console-text); font-family: 'Consolas', monospace; font-size: 0.9rem;">
-                <span style="opacity:0.5">root@danteng-finance:~$</span> ./run_settlement.sh<br>
-        """, unsafe_allow_html=True)
-        
-        console = st.empty()
-        
-        def log(msg, type="info"):
-            icon = "INFO" if type=="info" else "PASS" if type=="success" else "FAIL"
-            color = "var(--console-text)" if type!="error" else "#ef4444"
-            console.markdown(f"""
-            <div style="color: {color}; font-family: 'Consolas', monospace; margin-left: 20px;">
-                [{time.strftime('%H:%M:%S')}] [{icon}] {msg}
-            </div>
-            """, unsafe_allow_html=True)
-            time.sleep(0.1)
+        # 1. 进度条容器
+        progress_bar = st.progress(0)
+        status_text = st.empty()
 
         try:
-            log("System Check Initiated...")
-            
-            # 1. 校验
-            missing_spm = df_b_raw[map_b['spm']].isnull().sum()
+            # --- 阶段 1: 校验 ---
+            status_text.text("正在进行数据完整性校验...")
+            time.sleep(0.3) # 模拟体验
+            progress_bar.progress(20)
+
+            missing_spm = df_b[map_b['spm']].isnull().sum()
             if missing_spm > 0:
-                st.markdown("</div>", unsafe_allow_html=True) # 关闭控制台
-                # 弹窗报错
-                st.toast(f"❌ 校验被阻断：表B 发现 {missing_spm} 条空 SPM 数据！", icon="🚨")
-                st.error(f"Critical Error: Table B contains {missing_spm} missing SPM records.")
+                progress_bar.empty()
+                status_text.empty()
+                st.error(f"❌ 校验未通过：表 B 中发现 {missing_spm} 条数据缺少 SPM 编号。请修改源文件后重新上传。")
                 st.stop()
             
-            log(f"Integrity Check Passed. Processing {len(df_a_raw)} records from Source A...", "success")
-
-            # 2. 清洗
+            # --- 阶段 2: 清洗与计算 ---
+            status_text.text("校验通过，正在清洗数据...")
+            progress_bar.progress(50)
+            
             # A表聚合
-            agg_rules = {map_a['hours']: 'sum'}
-            for k in ['project', 'range', 'contract', 'sales', 'dept']:
-                agg_rules[map_a[k]] = 'first'
-            
-            df_a_clean = df_a_raw.dropna(subset=[map_a['spm']]).copy()
-            df_a_gp = df_a_clean.groupby([map_a['user'], map_a['spm']], as_index=False).agg(agg_rules)
-            
-            # B表拆分
-            df_b_clean = df_b_raw.dropna(subset=[map_b['spm']]).copy()
-            is_sub = df_b_clean[map_b['type']] == SUBSIDY_TAG
-            
-            df_sub = df_b_clean[is_sub].groupby([map_b['user'], map_b['spm']])[map_b['amount']].sum().reset_index(name='差旅补助')
-            df_fee = df_b_clean[~is_sub].groupby([map_b['user'], map_b['spm']])[map_b['amount']].sum().reset_index(name='差旅费控平台')
-            
-            log("Expense Classification Complete (Subsidy vs Fee Control).", "success")
+            agg = {map_a['hours']: 'sum'}
+            for k in ['project', 'range', 'contract', 'sales', 'dept']: agg[map_a[k]] = 'first'
+            df_a_cl = df_a.dropna(subset=[map_a['spm']]).copy()
+            df_a_gp = df_a_cl.groupby([map_a['user'], map_a['spm']], as_index=False).agg(agg)
 
-            # 3. 计算
+            # B表拆分
+            status_text.text("正在拆分差旅费用 (补助/费控)...")
+            progress_bar.progress(70)
+            df_b_cl = df_b.dropna(subset=[map_b['spm']]).copy()
+            is_sub = df_b_cl[map_b['type']] == SUBSIDY_TAG
+            df_sub = df_b_cl[is_sub].groupby([map_b['user'], map_b['spm']])[map_b['amount']].sum().reset_index(name='差旅补助')
+            df_fee = df_b_cl[~is_sub].groupby([map_b['user'], map_b['spm']])[map_b['amount']].sum().reset_index(name='差旅费控平台')
+
+            # 合并计算
             key_a = [map_a['user'], map_a['spm']]
             key_b = [map_b['user'], map_b['spm']]
+            res = pd.merge(df_a_gp, df_sub, left_on=key_a, right_on=key_b, how='left')
+            res = pd.merge(res, df_fee, left_on=key_a, right_on=key_b, how='left')
+            res.fillna(0, inplace=True)
             
-            df_main = pd.merge(df_a_gp, df_sub, left_on=key_a, right_on=key_b, how='left')
-            df_main = pd.merge(df_main, df_fee, left_on=key_a, right_on=key_b, how='left')
-            df_main.fillna(0, inplace=True)
-            
-            df_main['支持时间'] = df_main[map_a['hours']] / 8
-            df_main['人力费用'] = df_main['支持时间'] * PRICE_PER_DAY
-            df_main['结算费用合计'] = df_main['人力费用'] + df_main['差旅补助'] + df_main['差旅费控平台']
-            
-            log("Financial Calculation & Ledger Generation Complete.", "success")
-            st.markdown("</div></div>", unsafe_allow_html=True) # 关闭控制台
+            res['支持时间'] = res[map_a['hours']] / 8
+            res['人力费用'] = res['支持时间'] * PRICE_PER_DAY
+            res['结算费用合计'] = res['人力费用'] + res['差旅补助'] + res['差旅费控平台']
 
-            # 成功弹窗
-            st.toast("✅ 计算成功！报表已生成。", icon="🎉")
+            # --- 阶段 3: 格式化 ---
+            progress_bar.progress(90)
+            
+            # 表3
+            rename = {
+                map_a['user']: '人员', map_a['project']: '所属项目', map_a['range']: '人事范围',
+                map_a['spm']: 'SPM', map_a['contract']: '合同主体', map_a['sales']: '销售人员',
+                map_a['dept']: '销售部门', map_a['hours']: '耗时（小时）'
+            }
+            t3 = res.rename(columns=rename)
+            cols = ['人员', '所属项目', '人事范围', 'SPM', '合同主体', '销售人员', '销售部门',
+                    '差旅补助', '差旅费控平台', '耗时（小时）', '支持时间', '人力费用', '结算费用合计']
+            t3 = t3[[c for c in cols if c in t3.columns]]
+            t3.rename(columns={'支持时间': '支持时间（人天）'}, inplace=True)
+            t3.insert(0, '序号', range(1, len(t3)+1))
 
-            # 4. 结果下载 (使用原生容器)
+            # 表2
+            grp = ['人事范围', '合同主体', '销售部门']
+            if all(c in t3.columns for c in grp):
+                t2 = t3.groupby(grp).agg({'结算费用合计': 'sum', '支持时间（人天）': 'sum'}).reset_index()
+                t2.columns = ['销售公司', '采购公司', '采购部门', '金额（含税，单位：元）', '工作量（人天）']
+                t2.insert(0, '序号', range(1, len(t2)+1))
+            else: t2 = pd.DataFrame()
+
+            # 表1
+            t1 = t3.groupby('人员')['耗时（小时）'].sum().reset_index()
+            t1.rename(columns={'耗时（小时）': '项目工时'}, inplace=True)
+            t1.insert(0, '序号', range(1, len(t1)+1))
+
+            # --- 完成 ---
+            progress_bar.progress(100)
+            status_text.text("✅ 处理完成")
+            time.sleep(0.5)
+            progress_bar.empty()
+            status_text.empty()
+
+            # ==========================================
+            # 6. 文件下载区域 (仅在通过后显示)
+            # ==========================================
+            st.divider()
+            st.markdown("### 4. 报表下载")
+            st.success("校验通过！报表已生成，请在下方下载。")
+
             with st.container(border=True):
-                st.subheader("📊 报表下载中心 (Download Center)")
+                d1, d2, d3 = st.columns(3)
                 
-                # 生成表 3
-                rename_dict = {
-                    map_a['user']: '人员', map_a['project']: '所属项目', map_a['range']: '人事范围',
-                    map_a['spm']: 'SPM', map_a['contract']: '合同主体', map_a['sales']: '销售人员',
-                    map_a['dept']: '销售部门', map_a['hours']: '耗时（小时）'
-                }
-                t3 = df_main.rename(columns=rename_dict)
-                cols_final = ['人员', '所属项目', '人事范围', 'SPM', '合同主体', '销售人员', '销售部门',
-                              '差旅补助', '差旅费控平台', '耗时（小时）', '支持时间', '人力费用', '结算费用合计']
-                t3 = t3[[c for c in cols_final if c in t3.columns]] 
-                t3.rename(columns={'支持时间': '支持时间（人天）'}, inplace=True)
-                t3.insert(0, '序号', range(1, len(t3)+1))
-
-                # 生成表 2
-                grp_cols = ['人事范围', '合同主体', '销售部门']
-                if all(c in t3.columns for c in grp_cols):
-                    t2 = t3.groupby(grp_cols).agg({'结算费用合计': 'sum', '支持时间（人天）': 'sum'}).reset_index()
-                    t2.columns = ['销售公司', '采购公司', '采购部门', '金额（含税，单位：元）', '工作量（人天）']
-                    t2['备注'] = ''
-                    t2.insert(0, '序号', range(1, len(t2)+1))
-                else:
-                    t2 = pd.DataFrame()
-
-                # 生成表 1
-                t1 = t3.groupby('人员')['耗时（小时）'].sum().reset_index()
-                t1.rename(columns={'耗时（小时）': '项目工时'}, inplace=True)
-                t1.insert(0, '序号', range(1, len(t1)+1))
-
                 def to_excel(df):
                     output = io.BytesIO()
                     with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                         df.to_excel(writer, index=False)
                     return output.getvalue()
 
-                tab1, tab2, tab3 = st.tabs(["结果表3 (明细)", "结果表2 (结算)", "结果表1 (工时)"])
-                with tab1:
-                    st.download_button("📥 下载 结果表3.xlsx", to_excel(t3), "结果表3.xlsx", use_container_width=True)
-                    st.dataframe(t3, height=250)
-                with tab2:
-                    st.download_button("📥 下载 结果表2.xlsx", to_excel(t2), "结果表2.xlsx", use_container_width=True)
-                    st.dataframe(t2, height=250)
-                with tab3:
-                    st.download_button("📥 下载 结果表1.xlsx", to_excel(t1), "结果表1.xlsx", use_container_width=True)
-                    st.dataframe(t1, height=250)
+                with d1:
+                    st.download_button("📥 结果表1 (工时)", to_excel(t1), "结果表1.xlsx", use_container_width=True)
+                with d2:
+                    st.download_button("📥 结果表2 (结算)", to_excel(t2), "结果表2.xlsx", use_container_width=True)
+                with d3:
+                    st.download_button("📥 结果表3 (明细)", to_excel(t3), "结果表3.xlsx", use_container_width=True)
 
         except Exception as e:
-            st.markdown("</div>", unsafe_allow_html=True)
-            st.toast(f"系统运行错误: {str(e)}", icon="🔥")
-            st.error(f"Error Log: {str(e)}")
-
-else:
-    # 空状态美化
-    st.info("👈 请在上方上传数据文件以激活映射配置面板。")
+            st.error(f"处理过程中发生系统错误: {e}")
