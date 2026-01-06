@@ -1,10 +1,11 @@
+
 import streamlit as st
 import pandas as pd
 import io
 import time
 
 # ==========================================
-# 1. 系统配置与黑白极简皮肤
+# 1. 系统配置与强制深色极简皮肤
 # ==========================================
 st.set_page_config(
     page_title="淡藤财务报表",
@@ -13,122 +14,85 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# 状态管理
-if 'theme' not in st.session_state:
-    st.session_state.theme = 'light'
-
-def toggle_theme():
-    st.session_state.theme = 'dark' if st.session_state.theme == 'light' else 'light'
-
-# --- 极简黑白 CSS 变量 ---
-theme_light = """
-    --bg-color: #ffffff;
-    --text-color: #000000;
-    --card-bg: #ffffff;
-    --card-border: #e5e5e5;
-    --btn-bg: #000000;
-    --btn-text: #ffffff;
-    --success-bg: #f4f4f5;
-"""
-
-theme_dark = """
-    --bg-color: #000000;
-    --text-color: #ffffff;
-    --card-bg: #121212;
-    --card-border: #333333;
-    --btn-bg: #ffffff;
-    --btn-text: #000000;
-    --success-bg: #1a1a1a;
-"""
-
-current_theme = theme_light if st.session_state.theme == 'light' else theme_dark
-
-st.markdown(f"""
+# --- 强制深色极简 CSS ---
+st.markdown("""
 <style>
-    :root {{ {current_theme} }}
+    /* 强制定义深色变量 */
+    :root {
+        --bg-color: #000000;
+        --text-color: #ffffff;
+        --card-bg: #121212;
+        --card-border: #333333;
+        --btn-bg: #ffffff;
+        --btn-text: #000000;
+        --accent-color: #4ade80; /* 荧光绿 */
+        --error-color: #ef4444;
+    }
 
     /* 全局背景与文字 */
-    .stApp {{
+    .stApp {
         background-color: var(--bg-color);
         color: var(--text-color);
-    }}
+    }
     
-    h1, h2, h3, p, div, span, label {{
+    h1, h2, h3, p, div, span, label, li {
         color: var(--text-color) !important;
         font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    }}
+    }
 
     /* 极简卡片容器 */
-    .minimal-card {{
-        border: 1px solid var(--card-border);
+    div[data-testid="stVerticalBlock"] > div[style*="background-color"] {
         background-color: var(--card-bg);
-        border-radius: 8px;
-        padding: 24px;
-        margin-bottom: 24px;
-    }}
+    }
 
-    /* 按钮：黑白反转 */
-    .stButton > button {{
+    /* 按钮：黑底白字反转风格 */
+    .stButton > button {
         background-color: var(--btn-bg);
         color: var(--btn-text) !important;
         border: 1px solid var(--btn-bg);
         border-radius: 4px;
         padding: 0.5rem 2rem;
-        font-weight: 500;
+        font-weight: 600;
         transition: all 0.2s;
-    }}
-    .stButton > button:hover {{
-        opacity: 0.8;
-        border-color: var(--text-color);
-    }}
+    }
+    .stButton > button:hover {
+        opacity: 0.85;
+        box-shadow: 0 0 8px rgba(255, 255, 255, 0.3);
+    }
     
-    /* 上传组件边框 */
-    div[data-testid="stFileUploader"] {{
-        border: 1px dashed var(--card-border);
-        border-radius: 6px;
-    }}
+    /* 进度条修复 */
+    .stProgress > div > div > div > div {
+        background-color: var(--accent-color) !important;
+    }
 
-    /* 顶部导航对齐 */
-    .header-row {{
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding-bottom: 20px;
-        border-bottom: 1px solid var(--card-border);
-        margin-bottom: 30px;
-    }}
-    
+    /* 上传组件边框 */
+    div[data-testid="stFileUploader"] {
+        border: 1px dashed #555;
+        border-radius: 6px;
+        background-color: #1a1a1a;
+    }
+
     /* 侧边栏 */
-    section[data-testid="stSidebar"] {{
-        background-color: var(--card-bg);
-        border-right: 1px solid var(--card-border);
-    }}
+    section[data-testid="stSidebar"] {
+        background-color: #0a0a0a;
+        border-right: 1px solid #333;
+    }
+    
+    /* 错误提示框美化 */
+    .stAlert {
+        background-color: #1a1a1a;
+        border: 1px solid var(--error-color);
+        color: var(--error-color);
+    }
 </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 2. 头部 (Header) & 系统介绍
+# 2. 头部 (Header)
 # ==========================================
-# 使用 columns 布局头部
-c_head, c_toggle = st.columns([9, 1])
-with c_head:
-    st.markdown("# 😈 淡藤财务报表")
-    st.caption("Minimalist Financial Settlement System")
-
-with c_toggle:
-    # 切换按钮
-    icon = "🌙" if st.session_state.theme == 'light' else "🌞"
-    if st.button(icon, help="切换深色/浅色模式"):
-        toggle_theme()
-        st.rerun()
-
-# 1. 系统介绍
-st.markdown("### 1. 系统介绍")
-st.markdown("""
-本系统用于自动化合并 **交付明细** 与 **差旅明细**。请按照下方步骤上传文件，
-系统将自动执行字段映射、数据校验，并生成标准的三张结算报表。
-""")
-st.divider()
+st.markdown("# 😈 淡藤财务报表")
+st.caption("Minimalist Financial Settlement System | Dark Mode Only")
+st.markdown("---")
 
 # ==========================================
 # 3. 参数配置 (侧边栏)
@@ -139,11 +103,13 @@ with st.sidebar:
     SUBSIDY_TAG = st.text_input("补助关键词", value="差旅补助")
 
 # ==========================================
-# 4. 文件上传区域
+# 4. 系统介绍 & 文件上传
 # ==========================================
-st.markdown("### 2. 文件上传")
+st.markdown("### 1. 核心流程")
+st.info("步骤：上传文件 -> 自动映射 -> 强制校验 -> 结果留存下载")
 
-# 使用原生容器保持整洁
+st.markdown("### 2. 数据源上传")
+
 with st.container(border=True):
     col_a, col_b = st.columns(2)
     with col_a:
@@ -152,6 +118,10 @@ with st.container(border=True):
     with col_b:
         st.markdown("**Source B: 差旅明细**")
         file_b = st.file_uploader("拖拽或点击上传", type=['xlsx', 'csv'], key='b', label_visibility="collapsed")
+
+# 初始化 Session State
+if 'results' not in st.session_state:
+    st.session_state.results = None
 
 @st.cache_data(ttl=600)
 def load_data(file):
@@ -167,17 +137,15 @@ df_a = load_data(file_a)
 df_b = load_data(file_b)
 
 # ==========================================
-# 5. 报表校验与处理 (核心逻辑)
+# 5. 报表校验与处理
 # ==========================================
 if df_a is not None and df_b is not None:
     
-    # --- 隐式映射区域 (保持极简，但功能必须有) ---
-    # 清洗列名
+    # 隐式映射区域
     df_a.columns = [str(c).strip() for c in df_a.columns]
     df_b.columns = [str(c).strip() for c in df_b.columns]
     
-    # 简单的两列布局显示映射，不抢眼
-    with st.expander("🛠️ 字段映射设置 (默认已自动匹配，点击展开修改)", expanded=False):
+    with st.expander("🛠️ 字段映射设置 (默认自动匹配)", expanded=False):
         mc1, mc2 = st.columns(2)
         cols_a = list(df_a.columns)
         cols_b = list(df_b.columns)
@@ -188,7 +156,7 @@ if df_a is not None and df_b is not None:
             return 0
 
         with mc1:
-            st.caption("表A 映射关系")
+            st.caption("表A 映射")
             map_a = {}
             cfg_a = {
                 'user': ['人员', '姓名'], 'spm': ['SPM', '标识符'], 'hours': ['交付工时', '工时'],
@@ -199,7 +167,7 @@ if df_a is not None and df_b is not None:
                 map_a[k] = st.selectbox(f"{k}", cols_a, index=smart_idx(cols_a, v), key=f"a_{k}")
         
         with mc2:
-            st.caption("表B 映射关系")
+            st.caption("表B 映射")
             map_b = {}
             cfg_b = {
                 'user': ['出差人', '姓名'], 'spm': ['SPM', '项目编号'],
@@ -208,32 +176,47 @@ if df_a is not None and df_b is not None:
             for k, v in cfg_b.items():
                 map_b[k] = st.selectbox(f"{k}", cols_b, index=smart_idx(cols_b, v), key=f"b_{k}")
 
-    st.divider()
-    st.markdown("### 3. 报表校验与生成")
+    st.markdown("### 3. 执行生成")
 
     # 执行按钮
     if st.button("开始校验并生成报表", use_container_width=True):
         
-        # 1. 进度条容器
         progress_bar = st.progress(0)
         status_text = st.empty()
+        error_msgs = [] # 用于收集所有错误信息
 
         try:
-            # --- 阶段 1: 校验 ---
-            status_text.text("正在进行数据完整性校验...")
-            time.sleep(0.3) # 模拟体验
-            progress_bar.progress(20)
+            # --- 阶段 1: 强制数据完整性校验 ---
+            status_text.text("正在进行三重数据完整性校验...")
+            time.sleep(0.2)
+            progress_bar.progress(10)
 
-            missing_spm = df_b[map_b['spm']].isnull().sum()
-            if missing_spm > 0:
+            # 1. 校验 表B SPM (原有)
+            missing_spm_b = df_b[map_b['spm']].isnull().sum()
+            if missing_spm_b > 0:
+                error_msgs.append(f"❌ 表B 错误：发现 {missing_spm_b} 条缺少 [SPM编号] 的数据")
+
+            # 2. 校验 表A 合同主体 (新增)
+            missing_contract_a = df_a[map_a['contract']].isnull().sum()
+            if missing_contract_a > 0:
+                error_msgs.append(f"❌ 表A 错误：发现 {missing_contract_a} 条缺少 [合同主体] 的数据")
+
+            # 3. 校验 表A 交付工时 (新增)
+            missing_hours_a = df_a[map_a['hours']].isnull().sum()
+            if missing_hours_a > 0:
+                error_msgs.append(f"❌ 表A 错误：发现 {missing_hours_a} 条缺少 [交付工时] 的数据")
+
+            # 如果有任何错误，统一显示并阻断
+            if error_msgs:
                 progress_bar.empty()
                 status_text.empty()
-                st.error(f"❌ 校验未通过：表 B 中发现 {missing_spm} 条数据缺少 SPM 编号。请修改源文件后重新上传。")
-                st.stop()
+                for msg in error_msgs:
+                    st.error(msg)
+                st.stop() # 强制停止后续逻辑
             
-            # --- 阶段 2: 清洗与计算 ---
-            status_text.text("校验通过，正在清洗数据...")
-            progress_bar.progress(50)
+            # --- 阶段 2: 清洗 ---
+            status_text.text("校验全部通过！正在清洗数据...")
+            progress_bar.progress(40)
             
             # A表聚合
             agg = {map_a['hours']: 'sum'}
@@ -242,14 +225,16 @@ if df_a is not None and df_b is not None:
             df_a_gp = df_a_cl.groupby([map_a['user'], map_a['spm']], as_index=False).agg(agg)
 
             # B表拆分
-            status_text.text("正在拆分差旅费用 (补助/费控)...")
-            progress_bar.progress(70)
+            status_text.text("正在拆分差旅费用...")
+            progress_bar.progress(60)
             df_b_cl = df_b.dropna(subset=[map_b['spm']]).copy()
             is_sub = df_b_cl[map_b['type']] == SUBSIDY_TAG
             df_sub = df_b_cl[is_sub].groupby([map_b['user'], map_b['spm']])[map_b['amount']].sum().reset_index(name='差旅补助')
             df_fee = df_b_cl[~is_sub].groupby([map_b['user'], map_b['spm']])[map_b['amount']].sum().reset_index(name='差旅费控平台')
 
-            # 合并计算
+            # 合并
+            status_text.text("正在合并生成报表...")
+            progress_bar.progress(80)
             key_a = [map_a['user'], map_a['spm']]
             key_b = [map_b['user'], map_b['spm']]
             res = pd.merge(df_a_gp, df_sub, left_on=key_a, right_on=key_b, how='left')
@@ -261,8 +246,6 @@ if df_a is not None and df_b is not None:
             res['结算费用合计'] = res['人力费用'] + res['差旅补助'] + res['差旅费控平台']
 
             # --- 阶段 3: 格式化 ---
-            progress_bar.progress(90)
-            
             # 表3
             rename = {
                 map_a['user']: '人员', map_a['project']: '所属项目', map_a['range']: '人事范围',
@@ -289,35 +272,39 @@ if df_a is not None and df_b is not None:
             t1.rename(columns={'耗时（小时）': '项目工时'}, inplace=True)
             t1.insert(0, '序号', range(1, len(t1)+1))
 
-            # --- 完成 ---
+            # 存入 Session State
+            st.session_state.results = {'t1': t1, 't2': t2, 't3': t3}
+
             progress_bar.progress(100)
-            status_text.text("✅ 处理完成")
+            status_text.text("✅ 生成完成！")
             time.sleep(0.5)
             progress_bar.empty()
             status_text.empty()
 
-            # ==========================================
-            # 6. 文件下载区域 (仅在通过后显示)
-            # ==========================================
-            st.divider()
-            st.markdown("### 4. 报表下载")
-            st.success("校验通过！报表已生成，请在下方下载。")
-
-            with st.container(border=True):
-                d1, d2, d3 = st.columns(3)
-                
-                def to_excel(df):
-                    output = io.BytesIO()
-                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                        df.to_excel(writer, index=False)
-                    return output.getvalue()
-
-                with d1:
-                    st.download_button("📥 结果表1 (工时)", to_excel(t1), "结果表1.xlsx", use_container_width=True)
-                with d2:
-                    st.download_button("📥 结果表2 (结算)", to_excel(t2), "结果表2.xlsx", use_container_width=True)
-                with d3:
-                    st.download_button("📥 结果表3 (明细)", to_excel(t3), "结果表3.xlsx", use_container_width=True)
-
         except Exception as e:
-            st.error(f"处理过程中发生系统错误: {e}")
+            st.error(f"处理错误: {e}")
+
+# ==========================================
+# 6. 文件下载区域 (持久化显示)
+# ==========================================
+if st.session_state.results is not None:
+    st.divider()
+    st.markdown("### 4. 报表下载")
+    st.success("报表已就绪。点击下方按钮下载（无需重复生成）。")
+
+    with st.container(border=True):
+        d1, d2, d3 = st.columns(3)
+        results = st.session_state.results
+        
+        def to_excel(df):
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df.to_excel(writer, index=False)
+            return output.getvalue()
+
+        with d1:
+            st.download_button("📥 结果表1 (工时)", to_excel(results['t1']), "结果表1.xlsx", use_container_width=True)
+        with d2:
+            st.download_button("📥 结果表2 (结算)", to_excel(results['t2']), "结果表2.xlsx", use_container_width=True)
+        with d3:
+            st.download_button("📥 结果表3 (明细)", to_excel(results['t3']), "结果表3.xlsx", use_container_width=True)
