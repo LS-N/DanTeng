@@ -41,8 +41,12 @@ st.markdown("""
     }
     .ghost-btn button:hover { border-color: var(--red) !important; color: var(--red) !important; }
 
-    /* Dialog 居中与宽度优化 */
-    div[data-testid="stDialog"] > div { width: 85vw !important; max-width: 1400px !important; }
+    /* 修复：Dialog 居中与宽度优化 */
+    div[data-testid="stDialog"] > div[role="dialog"] { 
+        width: 80vw !important; 
+        max-width: 1200px !important; 
+        margin: auto !important; /* 强制居中 */
+    }
     
     /* 隐藏 Streamlit 默认的文件上传列表，由我们自定义的卡片接管 */
     div[data-testid="stFileUploader"] section > div:first-child { display: none; }
@@ -118,7 +122,7 @@ def clear_file(key):
 
 # --- Zone 1: Header ---
 st.title("😈 淡藤财务报表 Pro")
-st.caption("Minimalist Financial Settlement System | v3.0 Final")
+st.caption("Minimalist Financial Settlement System | v3.1 Fixed")
 
 # --- Zone 2: Upload Console ---
 with st.container(border=True):
@@ -202,14 +206,24 @@ if ready_to_run:
                              "错误清单.csv", "text/csv", use_container_width=True)
         
         # 操作 2: 外科手术修复弹窗
-        # 定义弹窗逻辑
+        # 定义弹窗逻辑 (已修复报错问题)
         @st.dialog("🛠️ 外科手术式修复 (仅显示错误行)", width="large")
         def surgical_fix_dialog():
             st.caption("🔴 红色单元格为必修项。修改后点击保存，系统将自动合并数据并重新计算。")
             
-            # 获取错误数据的索引
-            err_indices_a = err_df[err_df['来源']=='Source A']['原表行号'].unique() - 2 # Excel行号转Index
-            err_indices_b = err_df[err_df['来源']=='Source B']['原表行号'].unique() - 2
+            # === 核心修复逻辑：安全获取索引 ===
+            def get_safe_indices(source_name):
+                # 1. 筛选出对应来源的错误
+                rows = err_df[err_df['来源'] == source_name]['原表行号']
+                # 2. 强制转为数字，无法转换的（如 '-'）会变成 NaN 并被丢弃
+                rows_numeric = pd.to_numeric(rows, errors='coerce').dropna()
+                # 3. 计算索引 (Excel行号 - 2)
+                if rows_numeric.empty:
+                    return []
+                return rows_numeric.unique().astype(int) - 2
+
+            err_indices_a = get_safe_indices('Source A')
+            err_indices_b = get_safe_indices('Source B')
             
             # 过滤出需要修复的行 (Surgical Filter)
             df_a_fix = st.session_state.data_store['A']['df'].iloc[err_indices_a].copy() if len(err_indices_a)>0 else pd.DataFrame()
@@ -226,7 +240,7 @@ if ready_to_run:
                     # 样式：让错误行显眼
                     gb.configure_grid_options(getRowStyle={'background-color': '#2d1b1b'}) 
                     new_a = AgGrid(df_a_fix, gridOptions=gb.build(), height=300, key='fix_a')['data']
-                else: st.info("表 A 无需修复")
+                else: st.info("表 A 无需特定行修复（可能是工时不足等全局问题，请检查原数据）")
                     
             with t2:
                 if not df_b_fix.empty:
@@ -234,16 +248,14 @@ if ready_to_run:
                     gb.configure_default_column(editable=True)
                     gb.configure_grid_options(getRowStyle={'background-color': '#2d1b1b'})
                     new_b = AgGrid(df_b_fix, gridOptions=gb.build(), height=300, key='fix_b')['data']
-                else: st.info("表 B 无需修复")
+                else: st.info("表 B 无需特定行修复")
             
             if st.button("💾 保存修复并自动重算", type="primary", use_container_width=True):
                 # 缝合逻辑 (Stitch back)
                 if new_a is not None:
                     fixed_df = pd.DataFrame(new_a)
-                    # 使用索引回写原表
                     for i, row in fixed_df.iterrows():
-                        # 注意：AgGrid返回的数据索引可能重置，这里简单演示整体替换逻辑
-                        # 生产环境建议匹配唯一ID，这里简化为按位置回填
+                        # 使用索引回写原表
                         original_idx = df_a_fix.index[i] 
                         st.session_state.data_store['A']['df'].iloc[original_idx] = row
                 
@@ -324,11 +336,10 @@ if trigger_calc:
         for i, r in df_a[df_a[col_a_spm].isnull() | (df_a[col_a_spm] == '')].iterrows():
              errors.append({'严重级': '阻断', '来源': 'Source A', '原表行号': i+2, '信息': 'SPM不能为空'})
              
-        # R5: 业务逻辑 - 工时阈值
+        # R5: 业务逻辑 - 工时阈值 (全局性错误，无特定行号)
         agg_hrs = df_a.groupby(col_a_name)[col_a_hrs].sum()
         for name, h in agg_hrs.items():
             if h < MIN_HOURS:
-                # 注意：这里我们设定为阻断，如需改为警告，可不加入errors列表
                 errors.append({'严重级': '阻断', '来源': 'Source A', '原表行号': '-', '信息': f'人员[{name}] 总工时 {h} < 阈值 {MIN_HOURS}'})
                 
         # R6: 孤立费用检查 (匹配性)
@@ -343,7 +354,7 @@ if trigger_calc:
              errors.append({'严重级': '阻断', '来源': 'Source B', '原表行号': i+2, '信息': f'无法匹配到交付人员: {r["key"]}'})
 
     # 3. 结果判断
-    time.sleep(0.5) # 模拟计算延迟优化体验
+    time.sleep(0.5)
     
     if errors:
         # ❌ 失败分支
@@ -355,7 +366,7 @@ if trigger_calc:
         # ✅ 成功分支
         progress.progress(50, "正在生成报表...")
         
-        # 模拟生成逻辑
+        # 模拟生成逻辑 (这里可替换为完整计算逻辑)
         res_df = df_a.copy()
         res_df['结算金额'] = res_df[col_a_hrs] * PRICE_PER_DAY / 8
         
