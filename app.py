@@ -16,82 +16,71 @@ def inject_css():
         :root { --bg-color: #0d1117; --card-bg: #161b22; --accent: #238636; --text: #c9d1d9; --red: #da3633; --border: #30363d; }
         .stApp { background-color: var(--bg-color); color: var(--text); }
         
-        /* [UI] 主页文件卡片 */
+        /* 通用组件样式 */
         .file-card-styled { 
             background: #21262d; border-left: 4px solid #238636; border-radius: 4px; padding: 15px; 
             width: 100%; height: 100%; display: flex; align-items: center; justify-content: space-between; 
         }
-        /* [UI] 错误舱 */
         .error-box { border: 1px solid var(--red); background: rgba(218, 54, 51, 0.1); border-radius: 8px; padding: 1.5rem; margin-top: 1rem; }
         
-        /* [UI] 按钮 */
+        /* 按钮修正 */
         .ghost-btn button { border: 1px dashed #444 !important; color: #888 !important; background: transparent !important; }
-        .cat-btn button { border: 1px solid #30363d !important; background: #161b22 !important; color: #c9d1d9 !important; width: 100%; margin-top: 10px; }
-        .cat-btn button:hover { border-color: #a371f7 !important; color: #a371f7 !important; }
         
-        /* [UI] 映射表核心样式 (CSS Grid 布局) */
-        .mapping-container {
+        /* 顶部导航栏样式 */
+        .nav-container { padding-bottom: 10px; border-bottom: 1px solid #30363d; margin-bottom: 20px; }
+        
+        /* 表格整体容器 */
+        .table-container {
             border: 1px solid #30363d;
-            border-radius: 8px;
-            overflow: hidden;
-            margin-bottom: 20px;
-            font-size: 0.9rem;
+            border-radius: 6px;
             background-color: #0d1117;
+            overflow: hidden; /* 圆角溢出隐藏 */
         }
         
-        /* 表头 */
-        .map-header {
-            display: grid;
-            grid-template-columns: 2fr 3fr 1.5fr 3.5fr; /* 严格列宽比例 */
+        /* 表头样式 (通过 st.columns 渲染，配合 CSS 增强) */
+        div[data-testid="column"] > div > div.header-cell {
             background-color: #161b22;
-            padding: 12px 20px;
-            border-bottom: 1px solid #30363d;
+            color: #c9d1d9;
             font-weight: bold;
-            color: #8b949e;
-            align-items: center;
+            padding: 15px 10px;
+            border-bottom: 2px solid #30363d;
+            height: 100%;
+            display: flex; align-items: center;
         }
         
-        /* 表内容行 */
-        .map-row {
-            display: grid;
-            grid-template-columns: 2fr 3fr 1.5fr 3.5fr; /* 与表头一致 */
-            padding: 10px 20px;
+        /* 内容行样式 */
+        div.row-cell {
+            padding: 12px 10px;
             border-bottom: 1px solid #21262d;
-            align-items: center; /* 垂直居中 */
-            background-color: #0d1117;
-            transition: background 0.2s;
-            min-height: 50px;
+            height: 100%;
+            display: flex; align-items: center;
+            font-size: 0.9rem;
         }
-        .map-row:hover { background-color: #1c2128; }
-        .map-row:last-child { border-bottom: none; }
         
-        /* 标签样式 */
+        /* 标签 */
         .source-tag { 
-            padding: 2px 8px; border-radius: 12px; font-size: 0.75rem; font-weight: 500; display: inline-block; text-align: center;
+            padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 500; display: inline-block;
         }
         .tag-source { background: rgba(56, 139, 253, 0.15); color: #58a6ff; border: 1px solid rgba(56, 139, 253, 0.4); }
         .tag-result { background: rgba(238, 138, 36, 0.15); color: #db8e37; border: 1px solid rgba(238, 138, 36, 0.4); }
         
-        /* 说明条样式 */
+        /* 说明条 */
         .info-bar {
-            background-color: rgba(56, 139, 253, 0.1);
-            border-left: 3px solid #58a6ff;
+            background-color: rgba(35, 134, 54, 0.1);
+            border: 1px solid rgba(35, 134, 54, 0.3);
             color: #c9d1d9;
             padding: 10px 15px;
-            border-radius: 0 4px 4px 0;
+            border-radius: 6px;
             margin-bottom: 15px;
-            font-size: 0.9rem;
+            font-size: 0.85rem;
+            display: flex; align-items: center; gap: 10px;
         }
 
         /* 隐藏 Streamlit 默认组件杂项 */
         div[data-testid="stFileUploader"] section > div:first-child { display: none; }
         div[data-testid="stFileUploader"] { padding-top: 15px; }
-        
-        /* 修正 Selectbox 在 Grid 中的样式 */
         div[data-testid="stSelectbox"] { margin-bottom: 0px; }
-        div[data-testid="stSelectbox"] > div > div { 
-            min-height: 36px; padding-top: 0px; padding-bottom: 0px; border-color: #30363d; background-color: #0d1117;
-        }
+        div[data-testid="stSelectbox"] > div > div { min-height: 32px; border-color: #30363d; background-color: #0d1117; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -101,13 +90,8 @@ def inject_css():
 class DataEngine:
     @staticmethod
     def get_default_config():
-        """
-        定义字段映射默认配置 (模板)
-        严格基于用户提供的 Excel 文件表头，确保自动匹配成功率
-        """
         return pd.DataFrame([
             # === 结果表 3 (底表) ===
-            # Source A (工时表)
             {"所属表": "结果表3", "目标字段": "人员", "源表": "Source A", "匹配字段": "人员", "计算逻辑": "主键 (Join Key)"},
             {"所属表": "结果表3", "目标字段": "SPM", "源表": "Source A", "匹配字段": "SPM", "计算逻辑": "主键 (Join Key)"},
             {"所属表": "结果表3", "目标字段": "耗时(小时)", "源表": "Source A", "匹配字段": "交付工时", "计算逻辑": "SUM聚合 (清洗)"},
@@ -117,7 +101,6 @@ class DataEngine:
             {"所属表": "结果表3", "目标字段": "销售人员", "源表": "Source A", "匹配字段": "销售", "计算逻辑": "维度 (First)"},
             {"所属表": "结果表3", "目标字段": "销售部门", "源表": "Source A", "匹配字段": "销售部门", "计算逻辑": "维度 (->采购部门)"},
             
-            # Source B (费用表)
             {"所属表": "结果表3", "目标字段": "人员 (B)", "源表": "Source B", "匹配字段": "出差人", "计算逻辑": "外键 (Join Key)"},
             {"所属表": "结果表3", "目标字段": "SPM (B)", "源表": "Source B", "匹配字段": "SPM", "计算逻辑": "外键 (Join Key)"},
             {"所属表": "结果表3", "目标字段": "金额", "源表": "Source B", "匹配字段": "金额", "计算逻辑": "SUM聚合 (清洗)"},
@@ -288,11 +271,9 @@ class UIComponents:
             h = st.number_input("工时阈值 (小时)", value=100)
             s = st.text_input("补助关键词", "差旅补助")
             st.markdown("---")
-            st.markdown('<div class="cat-btn">', unsafe_allow_html=True)
-            if st.button("🐱 字段映射配置", help="查看映射逻辑"):
+            if st.button("🐱 字段映射 & 逻辑", help="查看映射逻辑"):
                 st.session_state.page = 'mapping'
                 st.rerun()
-            st.markdown('</div>', unsafe_allow_html=True)
             return p, h, s
 
     @staticmethod
@@ -333,53 +314,53 @@ class UIComponents:
 
     @staticmethod
     def render_tab_content(description, subset, is_edit, cols_a, cols_b):
-        # 1. 用途说明 (Info Bar)
+        """渲染映射表内容 (Table Style)"""
+        # 4. 用途说明
         st.markdown(f'<div class="info-bar">ℹ️ {description}</div>', unsafe_allow_html=True)
         
-        # 2. 映射表 (CSS Grid)
-        st.markdown("""
-        <div class="mapping-container">
-            <div class="map-header">
-                <div>目标字段</div>
-                <div>匹配字段</div>
-                <div>源表</div>
-                <div>逻辑说明</div>
-            </div>
-        """, unsafe_allow_html=True)
+        # 表格容器开始
+        st.markdown('<div class="table-container">', unsafe_allow_html=True)
         
+        # 表头 (Strictly Aligned)
+        c1, c2, c3, c4 = st.columns([2.5, 3.5, 1.5, 2.5])
+        with c1: st.markdown('<div class="header-cell">目标字段</div>', unsafe_allow_html=True)
+        with c2: st.markdown('<div class="header-cell">匹配字段</div>', unsafe_allow_html=True)
+        with c3: st.markdown('<div class="header-cell">源表</div>', unsafe_allow_html=True)
+        with c4: st.markdown('<div class="header-cell">逻辑说明</div>', unsafe_allow_html=True)
+        
+        # 表内容
         for idx, row in subset.iterrows():
             is_result_source = row['源表'] == '结果表3'
             
-            # 开启行容器
-            st.markdown('<div class="map-row">', unsafe_allow_html=True)
+            # 使用 container 模拟行边框
+            # 技巧：Streamlit container 无法直接设置 style，所以我们用 markdown + columns 组合
+            # 为了确保对齐，这里必须非常小心
             
-            # 使用 columns 布局内容以支持 Selectbox
-            c1, c2, c3, c4 = st.columns([2, 3, 1.5, 3.5])
+            c1, c2, c3, c4 = st.columns([2.5, 3.5, 1.5, 2.5])
             
             with c1:
-                st.markdown(f"<div style='font-weight:bold;'>{row['目标字段']}</div>", unsafe_allow_html=True)
+                st.markdown(f'<div class="row-cell" style="font-weight:bold;">{row["目标字段"]}</div>', unsafe_allow_html=True)
             
             with c2:
                 if is_edit and not is_result_source:
                     opts = cols_a if row['源表']=='Source A' else cols_b
                     cur = row['匹配字段']
                     if cur not in opts: opts = [cur] + opts
+                    # 这里的 selectbox 会自动占据高度，我们通过 CSS 修正了它的 padding
                     new_val = st.selectbox("s", opts, index=opts.index(cur), key=f"s_{idx}", label_visibility="collapsed")
                     st.session_state.mapping_config.at[idx, '匹配字段'] = new_val
                 else:
                     color = "#a5d6ff" if not is_result_source else "#8b949e"
-                    st.markdown(f"<div style='font-family:monospace; color:{color};'>{row['匹配字段']}</div>", unsafe_allow_html=True)
+                    st.markdown(f'<div class="row-cell" style="color:{color}; font-family:monospace;">{row["匹配字段"]}</div>', unsafe_allow_html=True)
             
             with c3:
                 tag_cls = 'tag-result' if is_result_source else 'tag-source'
-                st.markdown(f"<div><span class='source-tag {tag_cls}'>{row['源表']}</span></div>", unsafe_allow_html=True)
+                st.markdown(f'<div class="row-cell"><span class="source-tag {tag_cls}">{row["源表"]}</span></div>', unsafe_allow_html=True)
             
             with c4:
-                st.markdown(f"<div style='color:#666; font-size:0.85rem;'>{row['计算逻辑']}</div>", unsafe_allow_html=True)
+                st.markdown(f'<div class="row-cell" style="color:#888;">{row["计算逻辑"]}</div>', unsafe_allow_html=True)
                 
-            st.markdown('</div>', unsafe_allow_html=True) # close map-row
-            
-        st.markdown("</div>", unsafe_allow_html=True) # close mapping-container
+        st.markdown('</div>', unsafe_allow_html=True) # End table-container
 
 # ==============================================================================
 # Zone C: 控制层 (Controller)
@@ -509,49 +490,57 @@ if st.session_state.page == 'main':
                 st.rerun()
 
 elif st.session_state.page == 'mapping':
-    st.markdown("### 🐱 字段映射 & 逻辑配置")
+    # 1. 顶部导航 (Row 1)
     c1, c2 = st.columns([1, 4])
-    if c1.button("⬅️ 返回主页", use_container_width=True): 
+    c1.markdown("### 🐱 字段映射")
+    if c2.button("⬅️ 返回主页", use_container_width=True): 
         st.session_state.page = 'main'
         st.rerun()
     
-    with c2:
-        c_status, c_edit = st.columns([3, 1])
-        with c_edit:
-            has_files = st.session_state.data_store['A']['df'] is not None
-            if not st.session_state.is_editing_mapping:
-                if st.button("✏️ 编辑配置", type="primary", use_container_width=True):
-                    if not has_files: st.toast("请先上传文件", icon="🚫")
-                    else:
-                        st.session_state.is_editing_mapping = True
-                        st.rerun()
-            else:
-                if st.button("💾 保存生效", type="primary", use_container_width=True):
-                    st.session_state.is_editing_mapping = False
-                    st.session_state.is_calculated = False
-                    st.session_state.block_auto_run = False
-                    st.session_state.error_report = None
-                    st.rerun()
-    
     st.divider()
-    cols_a = list(st.session_state.data_store['A']['df'].columns) if st.session_state.data_store['A']['df'] is not None else []
-    cols_b = list(st.session_state.data_store['B']['df'].columns) if st.session_state.data_store['B']['df'] is not None else []
+
+    # 2. 模块标题 + 配置按钮 (Row 2)
+    c_title, c_action = st.columns([8, 2])
+    c_title.markdown("#### 🧬 数据血缘与逻辑配置")
     
+    has_files = st.session_state.data_store['A']['df'] is not None and st.session_state.data_store['B']['df'] is not None
+    
+    with c_action:
+        if not st.session_state.is_editing_mapping:
+            if st.button("✏️ 编辑配置", type="primary", use_container_width=True):
+                if not has_files: st.toast("请先在主页上传 A/B 表", icon="🚫")
+                else:
+                    st.session_state.is_editing_mapping = True
+                    st.rerun()
+        else:
+            if st.button("💾 保存生效", type="primary", use_container_width=True):
+                st.session_state.is_editing_mapping = False
+                st.session_state.is_calculated = False
+                st.session_state.block_auto_run = False
+                st.session_state.error_report = None
+                st.rerun()
+
+    # 3. 结果表切换 (Row 3)
     df_c = st.session_state.mapping_config
     t1, t2, t3 = st.tabs(["结果表3 (底表)", "结果表2 (结算)", "结果表1 (工时)"])
     
+    # 准备列名 (仅当编辑模式且有文件时)
+    cols_a = list(st.session_state.data_store['A']['df'].columns) if has_files else []
+    cols_b = list(st.session_state.data_store['B']['df'].columns) if has_files else []
+
+    # 4. 内容渲染 (Row 4)
     with t1:
         UIComponents.render_tab_content(
-            "全量明细底表：清洗、聚合 Source A/B 数据，并完成合并与金额计算。",
+            "全量明细底表：基于 Source A/B 进行清洗、聚合、关联计算后的宽表。",
             df_c[df_c['所属表']=='结果表3'], st.session_state.is_editing_mapping, cols_a, cols_b
         )
     with t2:
         UIComponents.render_tab_content(
-            "结算汇总表：基于结果表3，按【销售公司+采购公司+采购部门】维度聚合总金额。",
+            "结算汇总表：基于【结果表3】按公司/部门维度二次聚合的金额数据。",
             df_c[df_c['所属表']=='结果表2'], st.session_state.is_editing_mapping, cols_a, cols_b
         )
     with t3:
         UIComponents.render_tab_content(
-            "工时统计表：基于结果表3，按【人员】维度聚合总工时。",
+            "工时统计表：基于【结果表3】按人员维度二次聚合的工时数据。",
             df_c[df_c['所属表']=='结果表1'], st.session_state.is_editing_mapping, cols_a, cols_b
         )
