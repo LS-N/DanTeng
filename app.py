@@ -29,23 +29,10 @@ def inject_css():
             border-radius: 4px;
         }
 
-        /* [核心] 强制 data_editor 样式 */
-        /* 表头居中 */
-        div[data-testid="stDataFrame"] th { 
-            text-align: center !important; 
-            background-color: #161b22 !important;
-            color: #fff !important;
-            border-bottom: 1px solid #30363d !important;
-        }
-        /* 单元格居中 */
-        div[data-testid="stDataFrame"] td { 
-            text-align: center !important; 
-            border-bottom: 1px solid #30363d !important;
-        }
-        /* 调整下拉框 */
-        div[data-testid="stDataFrame"] select { text-align: center; }
-
-        /* 隐藏 Streamlit 默认组件杂项 */
+        /* 强制表格容器样式 */
+        .stDataFrame { border: 1px solid #30363d; border-radius: 4px; }
+        
+        /* 隐藏杂项 */
         div[data-testid="stFileUploader"] section > div:first-child { display: none; }
         div[data-testid="stFileUploader"] { padding-top: 15px; }
     </style>
@@ -57,12 +44,10 @@ def inject_css():
 class DataEngine:
     @staticmethod
     def get_default_config():
-        """
-        严格对齐 Excel 文件的 14 个字段
-        """
+        # 🔒 表示系统锁定行，禁止编辑
         return pd.DataFrame([
-            # === 结果表 3 (14个字段 + 3个必须的辅助配置) ===
-            {"所属表": "结果表3", "序号": 1, "目标字段": "序号", "源表": "系统生成", "匹配字段": "-", "逻辑说明": "自增序列"},
+            # === 结果表 3 (14个核心字段 + 辅助) ===
+            {"所属表": "结果表3", "序号": 1, "目标字段": "序号", "源表": "🔒 系统生成", "匹配字段": "-", "逻辑说明": "自增序列"},
             {"所属表": "结果表3", "序号": 2, "目标字段": "人员", "源表": "Source A", "匹配字段": "人员", "逻辑说明": "主键 (Join Key)"},
             {"所属表": "结果表3", "序号": 3, "目标字段": "所属项目", "源表": "Source A", "匹配字段": "项目", "逻辑说明": "维度 (First)"},
             {"所属表": "结果表3", "序号": 4, "目标字段": "人事范围", "源表": "Source A", "匹配字段": "人事范围", "逻辑说明": "维度 (->销售公司)"},
@@ -73,32 +58,31 @@ class DataEngine:
             {"所属表": "结果表3", "序号": 9, "目标字段": "差旅补助", "源表": "Source B", "匹配字段": "金额", "逻辑说明": "筛选：产品类型='差旅补助'"},
             {"所属表": "结果表3", "序号": 10, "目标字段": "差旅费控平台", "源表": "Source B", "匹配字段": "金额", "逻辑说明": "筛选：产品类型!='差旅补助'"},
             {"所属表": "结果表3", "序号": 11, "目标字段": "耗时（小时）", "源表": "Source A", "匹配字段": "交付工时", "逻辑说明": "SUM聚合 (清洗)"},
-            {"所属表": "结果表3", "序号": 12, "目标字段": "支持时间（人天）", "源表": "公式计算", "匹配字段": "-", "逻辑说明": "耗时 / 8"},
-            {"所属表": "结果表3", "序号": 13, "目标字段": "人力费用", "源表": "公式计算", "匹配字段": "-", "逻辑说明": "人天 * 单价"},
-            {"所属表": "结果表3", "序号": 14, "目标字段": "结算费用合计", "源表": "公式计算", "匹配字段": "-", "逻辑说明": "人力 + 差旅 + 费控"},
+            {"所属表": "结果表3", "序号": 12, "目标字段": "支持时间（人天）", "源表": "🔒 公式计算", "匹配字段": "-", "逻辑说明": "耗时 / 8"},
+            {"所属表": "结果表3", "序号": 13, "目标字段": "人力费用", "源表": "🔒 公式计算", "匹配字段": "-", "逻辑说明": "人天 * 单价"},
+            {"所属表": "结果表3", "序号": 14, "目标字段": "结算费用合计", "源表": "🔒 公式计算", "匹配字段": "-", "逻辑说明": "人力 + 差旅 + 费控"},
             
-            # [辅助配置] 必须存在的关联字段 (为了让 Source B 能 join 上)
+            # 辅助配置
             {"所属表": "结果表3", "序号": 15, "目标字段": "[配置] B表关联人", "源表": "Source B", "匹配字段": "出差人", "逻辑说明": "辅助：用于匹配A表人员"},
             {"所属表": "结果表3", "序号": 16, "目标字段": "[配置] B表关联SPM", "源表": "Source B", "匹配字段": "SPM", "逻辑说明": "辅助：用于匹配A表SPM"},
             {"所属表": "结果表3", "序号": 17, "目标字段": "[配置] B表类型列", "源表": "Source B", "匹配字段": "产品类型", "逻辑说明": "辅助：用于区分补助/费控"},
 
-            # === 结果表 2 (5个字段) ===
-            {"所属表": "结果表2", "序号": 1, "目标字段": "序号", "源表": "系统生成", "匹配字段": "-", "逻辑说明": "自增序列"},
-            {"所属表": "结果表2", "序号": 2, "目标字段": "销售公司", "源表": "结果表3", "匹配字段": "人事范围", "逻辑说明": "维度分组"},
-            {"所属表": "结果表2", "序号": 3, "目标字段": "采购公司", "源表": "结果表3", "匹配字段": "合同主体", "逻辑说明": "维度分组"},
-            {"所属表": "结果表2", "序号": 4, "目标字段": "采购部门", "源表": "结果表3", "匹配字段": "销售部门", "逻辑说明": "维度分组"},
-            {"所属表": "结果表2", "序号": 5, "目标字段": "金额（含税，单位：元）", "源表": "结果表3", "匹配字段": "结算费用合计", "逻辑说明": "SUM聚合"},
-            {"所属表": "结果表2", "序号": 6, "目标字段": "工作量（人天）", "源表": "结果表3", "匹配字段": "支持时间（人天）", "逻辑说明": "SUM聚合"},
+            # === 结果表 2 ===
+            {"所属表": "结果表2", "序号": 1, "目标字段": "序号", "源表": "🔒 系统生成", "匹配字段": "-", "逻辑说明": "自增序列"},
+            {"所属表": "结果表2", "序号": 2, "目标字段": "销售公司", "源表": "🔒 结果表3", "匹配字段": "人事范围", "逻辑说明": "维度分组"},
+            {"所属表": "结果表2", "序号": 3, "目标字段": "采购公司", "源表": "🔒 结果表3", "匹配字段": "合同主体", "逻辑说明": "维度分组"},
+            {"所属表": "结果表2", "序号": 4, "目标字段": "采购部门", "源表": "🔒 结果表3", "匹配字段": "销售部门", "逻辑说明": "维度分组"},
+            {"所属表": "结果表2", "序号": 5, "目标字段": "金额（含税）", "源表": "🔒 结果表3", "匹配字段": "结算费用合计", "逻辑说明": "SUM聚合"},
+            {"所属表": "结果表2", "序号": 6, "目标字段": "工作量（人天）", "源表": "🔒 结果表3", "匹配字段": "支持时间（人天）", "逻辑说明": "SUM聚合"},
 
-            # === 结果表 1 (3个字段) ===
-            {"所属表": "结果表1", "序号": 1, "目标字段": "序号", "源表": "系统生成", "匹配字段": "-", "逻辑说明": "自增序列"},
-            {"所属表": "结果表1", "序号": 2, "目标字段": "人员", "源表": "结果表3", "匹配字段": "人员", "逻辑说明": "维度分组"},
-            {"所属表": "结果表1", "序号": 3, "目标字段": "项目工时", "源表": "结果表3", "匹配字段": "耗时（小时）", "逻辑说明": "SUM聚合"},
+            # === 结果表 1 ===
+            {"所属表": "结果表1", "序号": 1, "目标字段": "序号", "源表": "🔒 系统生成", "匹配字段": "-", "逻辑说明": "自增序列"},
+            {"所属表": "结果表1", "序号": 2, "目标字段": "人员", "源表": "🔒 结果表3", "匹配字段": "人员", "逻辑说明": "维度分组"},
+            {"所属表": "结果表1", "序号": 3, "目标字段": "项目工时", "源表": "🔒 结果表3", "匹配字段": "耗时（小时）", "逻辑说明": "SUM聚合"},
         ])
 
     @staticmethod
     def get_col(config_df, target):
-        """通用获取列名方法"""
         row = config_df[config_df['目标字段'] == target]
         if row.empty: return None
         return str(row.iloc[0]['匹配字段']).strip()
@@ -113,18 +97,14 @@ class DataEngine:
         errors = []
         c = lambda t: DataEngine.get_col(config_df, t)
         
-        # 1. 动态获取列名 (从结果表3配置中提取)
-        # Source A
+        # 1. 动态获取列名
         col_a_user = c('人员')
         col_a_spm = c('SPM')
         col_a_hrs = c('耗时（小时）')
-        
-        # Source B (从辅助配置提取)
         col_b_user = c('[配置] B表关联人')
         col_b_spm = c('[配置] B表关联SPM')
-        col_b_amt = c('差旅补助') # 金额源列
+        col_b_amt = c('差旅补助')
         
-        # 2. 存在性检查
         def check(df, col, src, tag):
             if col and col not in df.columns:
                 errors.append({'类型':'逻辑错误', '来源':src, '_sys_id':'-', '行号':'-', '信息':f'缺列: {col} (用途:{tag})'})
@@ -136,61 +116,56 @@ class DataEngine:
         
         if not (valid_a and valid_b): return errors, df_a, df_b
 
-        # 3. 校验逻辑 (简化)
-        # ... (与之前一致，略去重复代码以聚焦核心) ...
+        # 校验逻辑
+        df_a_clean = df_a.copy()
+        df_a_clean[col_a_hrs] = DataEngine.clean_num(df_a_clean, col_a_hrs)
+        for i, r in df_a_clean[df_a_clean[col_a_hrs] < 0].iterrows():
+            errors.append({'类型':'数据错误', '来源':'Source A', '_sys_id':r.get('_sys_id','-'), '行号':r.get('_sys_id','-'), '信息':'工时为负'})
+        
         return errors, df_a, df_b
 
     @staticmethod
     def calculate(df_a, df_b, config_df, price_per_day, subsidy_tag):
         c = lambda t: DataEngine.get_col(config_df, t)
         
-        # A表
         col_a_user = c('人员')
         col_a_spm = c('SPM')
         col_a_hrs = c('耗时（小时）')
-        # A表维度
         dims_a = {
             'project': c('所属项目'), 'range': c('人事范围'), 'contract': c('合同主体'),
             'sales': c('销售人员'), 'dept': c('销售部门')
         }
         
-        # B表
         col_b_user = c('[配置] B表关联人')
         col_b_spm = c('[配置] B表关联SPM')
-        col_b_amt = c('差旅补助') # 这里金额列在配置里都是同一个源列
+        col_b_amt = c('差旅补助')
         col_b_type = c('[配置] B表类型列')
 
-        # 清洗
         df_a[col_a_hrs] = DataEngine.clean_num(df_a, col_a_hrs)
         df_b[col_b_amt] = DataEngine.clean_num(df_b, col_b_amt)
 
-        # 聚合 A
         agg_rules = {col_a_hrs: 'sum'}
         for _, col in dims_a.items():
             if col: agg_rules[col] = 'first'
         df_a_gp = df_a.groupby([col_a_user, col_a_spm], as_index=False).agg(agg_rules)
 
-        # 聚合 B
         is_sub = df_b[col_b_type].astype(str).str.contains(subsidy_tag, na=False)
         grp_b = [col_b_user, col_b_spm]
         df_sub = df_b[is_sub].groupby(grp_b)[col_b_amt].sum().reset_index(name='差旅补助')
         df_fee = df_b[~is_sub].groupby(grp_b)[col_b_amt].sum().reset_index(name='差旅费控平台')
 
-        # 合并
         for d in [df_a_gp, df_sub, df_fee]:
             k = col_a_spm if col_a_spm in d.columns else col_b_spm
-            d[k] = d[k].astype(str) # 统一SPM类型
+            d[k] = d[k].astype(str)
 
         res = pd.merge(df_a_gp, df_sub, left_on=[col_a_user, col_a_spm], right_on=[col_b_user, col_b_spm], how='left')
         res = pd.merge(res, df_fee, left_on=[col_a_user, col_a_spm], right_on=[col_b_user, col_b_spm], how='left')
         res = res.fillna(0)
 
-        # 计算
         res['支持时间（人天）'] = res[col_a_hrs] / 8
         res['人力费用'] = res['支持时间（人天）'] * price_per_day
         res['结算费用合计'] = res['人力费用'] + res['差旅补助'] + res['差旅费控平台']
 
-        # 构造结果表3
         rename_map = {
             col_a_user: '人员', dims_a['project']: '所属项目', dims_a['range']: '人事范围',
             col_a_spm: 'SPM', dims_a['contract']: '合同主体', dims_a['sales']: '销售人员',
@@ -198,14 +173,11 @@ class DataEngine:
         }
         t3 = res.rename(columns=rename_map)
         
-        # 补全列
         final_cols = ['序号','人员','所属项目','人事范围','SPM','合同主体','销售人员','销售部门',
                       '差旅补助','差旅费控平台','耗时（小时）','支持时间（人天）','人力费用','结算费用合计']
         t3.insert(0, '序号', range(1, len(t3)+1))
-        # 确保只有存在的列才选
         t3 = t3[[c for c in final_cols if c in t3.columns]]
 
-        # 构造结果表2
         t2_cols = ['人事范围', '合同主体', '销售部门']
         if all(c in t3.columns for c in t2_cols):
             t2 = t3.groupby(t2_cols).agg({'结算费用合计':'sum', '支持时间（人天）':'sum'}).reset_index()
@@ -213,7 +185,6 @@ class DataEngine:
             t2.insert(0, '序号', range(1, len(t2)+1))
         else: t2 = pd.DataFrame()
 
-        # 构造结果表1
         t1 = t3.groupby('人员')['耗时（小时）'].sum().reset_index()
         t1.rename(columns={'耗时（小时）':'项目工时'}, inplace=True)
         t1.insert(0, '序号', range(1, len(t1)+1))
@@ -282,71 +253,60 @@ class UIComponents:
 
     @staticmethod
     def render_native_editor(desc, subset, is_edit, cols_a, cols_b):
-        """渲染原生表格"""
+        """渲染原生表格 (Python 居中配置版)"""
         st.markdown(f'<div class="info-bar">ℹ️ {desc}</div>', unsafe_allow_html=True)
         
-        # 1. 数据准备
+        # 1. 准备数据 (只保留核心4列)
         df_display = subset[['序号', '目标字段', '源表', '匹配字段', '逻辑说明']].reset_index(drop=True)
         
-        # 2. 样式: 结果表来源/系统生成的行 -> 置灰
-        def highlight_readonly(row):
-            if row['源表'] in ['结果表3', '系统生成', '公式计算']:
-                return ['background-color: #21262d; color: #666'] * len(row)
-            return [''] * len(row)
-        
-        styled_df = df_display.style.apply(highlight_readonly, axis=1)
-
-        # 3. 列配置
+        # 2. 列配置 (alignment="center" 是关键)
         column_config = {
-            "序号": st.column_config.NumberColumn("序号", width="small", disabled=True),
-            "目标字段": st.column_config.TextColumn("目标字段", disabled=True, width="medium"),
-            "逻辑说明": st.column_config.TextColumn("逻辑说明", disabled=True, width="large"),
+            "序号": st.column_config.NumberColumn("序号", width="small", disabled=True, alignment="center"),
+            "目标字段": st.column_config.TextColumn("目标字段", disabled=True, width="medium", alignment="center"),
+            "逻辑说明": st.column_config.TextColumn("逻辑说明", disabled=True, width="large", alignment="center"),
         }
 
-        # 4. 可编辑配置
+        # 3. 动态配置可编辑列
         if is_edit:
             column_config["源表"] = st.column_config.SelectboxColumn(
-                "源表", options=["Source A", "Source B"], width="small", required=True
+                "源表", options=["Source A", "Source B"], width="small", required=True, alignment="center"
             )
-            # 这里的 options 会在 loop 中动态校验，这里给全集
             column_config["匹配字段"] = st.column_config.SelectboxColumn(
-                "匹配字段", options=cols_a + cols_b, width="medium", required=True
+                "匹配字段", options=cols_a + cols_b, width="medium", required=True, alignment="center"
             )
         else:
-            column_config["源表"] = st.column_config.TextColumn("源表", disabled=True)
-            column_config["匹配字段"] = st.column_config.TextColumn("匹配字段", disabled=True)
+            column_config["源表"] = st.column_config.TextColumn("源表", disabled=True, alignment="center")
+            column_config["匹配字段"] = st.column_config.TextColumn("匹配字段", disabled=True, alignment="center")
 
-        # 5. 渲染
+        # 4. 渲染
         edited = st.data_editor(
-            styled_df,
+            df_display,
             column_config=column_config,
             use_container_width=True,
             hide_index=True,
             disabled=not is_edit, 
-            key=f"editor_{subset.iloc[0]['所属表']}",
-            num_rows="fixed"
+            key=f"editor_{subset.iloc[0]['所属表']}"
         )
 
-        # 6. 逻辑封堵 (Save Logic)
+        # 5. 后端逻辑封堵 (禁止修改系统行)
         if is_edit:
             for i, row in edited.iterrows():
                 orig_idx = subset.index[i]
                 orig_row = st.session_state.mapping_config.loc[orig_idx]
                 
                 # 只有 Source A/B 允许改
-                if orig_row['源表'] not in ['Source A', 'Source B']:
+                if 'Source' not in orig_row['源表']:
                     continue 
                 
-                # 1. 源表变更 -> 自动匹配
+                # 源表/字段变更逻辑
                 if row['源表'] != orig_row['源表']:
                     st.session_state.mapping_config.at[orig_idx, '源表'] = row['源表']
                     target_opts = cols_a if row['源表'] == 'Source A' else cols_b
-                    # 尝试用目标字段名自动匹配，否则置空(让用户选)
-                    new_match = row['目标字段'] if row['目标字段'] in target_opts else (target_opts[0] if target_opts else None)
-                    st.session_state.mapping_config.at[orig_idx, '匹配字段'] = new_match
-                
-                # 2. 匹配字段变更 (校验归属)
+                    # 自动匹配逻辑：如果目标字段名在源表中存在，自动选上，否则默认第一个
+                    new_val = row['目标字段'] if row['目标字段'] in target_opts else (target_opts[0] if target_opts else None)
+                    st.session_state.mapping_config.at[orig_idx, '匹配字段'] = new_val
                 elif row['匹配字段'] != orig_row['匹配字段']:
+                    # 校验归属
                     valid_opts = cols_a if row['源表'] == 'Source A' else cols_b
                     if row['匹配字段'] in valid_opts:
                         st.session_state.mapping_config.at[orig_idx, '匹配字段'] = row['匹配字段']
