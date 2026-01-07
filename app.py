@@ -6,20 +6,21 @@ import zipfile
 from st_aggrid import AgGrid, GridOptionsBuilder
 
 # ==============================================================================
-# Zone 0: 全局配置 & 样式注入
+# Zone 0: 全局配置 & 样式注入 (已移除脆弱的 Hack)
 # ==============================================================================
 st.set_page_config(page_title="淡藤财务报表 Pro", page_icon="😈", layout="wide", initial_sidebar_state="expanded")
 
 def inject_css():
+    # 仅保留自定义类 (这些是安全的，因为是你自己在代码里写的 HTML class)
     st.markdown("""
     <style>
+        /* 基础配色变量 */
         :root { --bg-color: #0d1117; --card-bg: #161b22; --accent: #238636; --text: #c9d1d9; --border-color: #555c65; }
         .stApp { background-color: var(--bg-color); color: var(--text); }
         
-        /* 顶部导航 */
+        /* 自定义组件样式 - 安全 */
         .nav-header { font-size: 1.2rem; font-weight: bold; display:flex; align-items:center; height: 100%; }
         
-        /* 说明条 */
         .info-bar {
             background-color: rgba(56, 139, 253, 0.1);
             border-left: 4px solid #58a6ff;
@@ -30,30 +31,15 @@ def inject_css():
             border-radius: 4px;
         }
 
-        /* [核心] 强制表格内容居中 (CSS Hack) */
-        /* 表头 */
-        [data-testid="stDataFrame"] th {
-            text-align: center !important;
-            vertical-align: middle !important;
-            background-color: #161b22 !important;
-            color: white !important;
-            border-bottom: 1px solid #30363d !important;
+        .error-box {
+            border: 1px solid #ff7b72;
+            background-color: rgba(255, 123, 114, 0.1);
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 15px;
         }
-        /* 单元格内容 */
-        [data-testid="stDataFrame"] td {
-            text-align: center !important;
-            vertical-align: middle !important;
-            border-bottom: 1px solid #30363d !important;
-        }
-        /* 下拉框居中 */
-        [data-testid="stDataFrame"] select {
-            text-align: center !important;
-            margin: 0 auto !important;
-        }
-        
-        /* 隐藏上传组件默认列表 */
-        div[data-testid="stFileUploader"] section > div:first-child { display: none; }
-        div[data-testid="stFileUploader"] { padding-top: 15px; }
+
+        /* 已移除：所有针对 data-testid 的强制覆盖，恢复 Streamlit 原生稳定样式 */
     </style>
     """, unsafe_allow_html=True)
 
@@ -240,11 +226,13 @@ class UIComponents:
         has_file = data['df'] is not None
         with st.container(border=True):
             if not has_file:
-                st.markdown(f"<div style='text-align:center; color:#888; margin-top:30px; margin-bottom:10px;'>{title}</div>", unsafe_allow_html=True)
+                # 移除强制居中，使用默认左对齐，但在内部使用 markdown 简单提示
+                st.markdown(f"**{title}**")
                 return st.file_uploader(title, type=['xlsx', 'csv'], key=f"uploader_{key}", label_visibility="collapsed")
             else:
                 c1, c2 = st.columns([9, 1])
-                c1.markdown(f"<div style='background:#21262d; border-left:4px solid #238636; padding:15px; border-radius:4px;'>📄 {data['name']}</div>", unsafe_allow_html=True)
+                # 使用原生 markdown 样式，不依赖 div hack
+                c1.markdown(f"✅ **{data['name']}**")
                 if c2.button("Del", key=f"del_{key}"): return "DELETE"
         return None
 
@@ -252,8 +240,12 @@ class UIComponents:
     def render_error_report(err_df, on_fix):
         fixable = err_df[err_df['类型']=='数据错误']
         logic = err_df[err_df['类型']=='逻辑错误']
-        st.markdown(f"<div class='error-box'><h3 style='color:#ff7b72; margin:0'>🚨 校验失败</h3><p>发现 <b>{len(fixable)}</b> 个数据错误，<b>{len(logic)}</b> 个逻辑错误。</p></div>", unsafe_allow_html=True)
+        
+        # 使用安全的自定义类 error-box
+        st.markdown(f"<div class='error-box'><h3 style='margin:0'>🚨 校验失败</h3><p>发现 <b>{len(fixable)}</b> 个数据错误，<b>{len(logic)}</b> 个逻辑错误。</p></div>", unsafe_allow_html=True)
+        
         st.dataframe(err_df[['类型','来源','行号','信息']], use_container_width=True, hide_index=True)
+        
         c1, c2 = st.columns(2)
         c1.download_button("📥 下载清单", err_df.to_csv(index=False).encode('utf-8-sig'), "err.csv", "text/csv", use_container_width=True)
         if not fixable.empty:
@@ -272,20 +264,16 @@ class UIComponents:
 
     @staticmethod
     def render_native_editor(desc, subset, is_edit, cols_a, cols_b):
-        """渲染原生表格 (无 alignment 参数版)"""
         st.markdown(f'<div class="info-bar">ℹ️ {desc}</div>', unsafe_allow_html=True)
         
-        # 1. 准备数据
         df_display = subset[['序号', '目标字段', '源表', '匹配字段', '逻辑说明']].copy().reset_index(drop=True)
         
-        # 3. 列配置 (移除 alignment 参数，完全依赖 CSS)
         column_config = {
             "序号": st.column_config.NumberColumn("序号", width="small", disabled=True),
             "目标字段": st.column_config.TextColumn("目标字段", disabled=True, width="medium"),
             "逻辑说明": st.column_config.TextColumn("逻辑说明", disabled=True, width="large"),
         }
 
-        # 4. 动态配置可编辑列
         if is_edit:
             column_config["源表"] = st.column_config.SelectboxColumn(
                 "源表", options=["Source A", "Source B"], width="small", required=True
@@ -297,7 +285,6 @@ class UIComponents:
             column_config["源表"] = st.column_config.TextColumn("源表", disabled=True)
             column_config["匹配字段"] = st.column_config.TextColumn("匹配字段", disabled=True)
 
-        # 5. 渲染表格
         edited = st.data_editor(
             df_display,
             column_config=column_config,
@@ -307,25 +294,20 @@ class UIComponents:
             key=f"editor_{subset.iloc[0]['所属表']}"
         )
 
-        # 6. 后端逻辑封堵 (禁止修改系统行)
         if is_edit:
             for i, row in edited.iterrows():
                 orig_idx = subset.index[i]
                 orig_row = st.session_state.mapping_config.loc[orig_idx]
                 
-                # 只有 Source A/B 允许改
                 if 'Source' not in orig_row['源表']:
                     continue 
                 
-                # 源表/字段变更逻辑
                 if row['源表'] != orig_row['源表']:
                     st.session_state.mapping_config.at[orig_idx, '源表'] = row['源表']
                     target_opts = cols_a if row['源表'] == 'Source A' else cols_b
-                    # 自动匹配
                     new_val = row['目标字段'] if row['目标字段'] in target_opts else (target_opts[0] if target_opts else None)
                     st.session_state.mapping_config.at[orig_idx, '匹配字段'] = new_val
                 elif row['匹配字段'] != orig_row['匹配字段']:
-                    # 校验归属
                     valid_opts = cols_a if row['源表'] == 'Source A' else cols_b
                     if row['匹配字段'] in valid_opts:
                         st.session_state.mapping_config.at[orig_idx, '匹配字段'] = row['匹配字段']
@@ -458,7 +440,6 @@ if st.session_state.page == 'main':
                 st.rerun()
 
 elif st.session_state.page == 'mapping':
-    # 1. 顶部导航 (Title + Small Return Button)
     c1, c2 = st.columns([9, 1])
     c1.markdown("<div class='nav-header'>🐱 字段映射 & 逻辑配置</div>", unsafe_allow_html=True)
     if c2.button("⬅️", use_container_width=True, help="返回主页"): 
@@ -467,7 +448,6 @@ elif st.session_state.page == 'mapping':
     
     st.markdown("<hr style='margin-top:0; border-color:#30363d;'>", unsafe_allow_html=True)
 
-    # 2. 模块标题 + 配置按钮
     c_title, c_spacer, c_action = st.columns([7, 1, 2])
     c_title.markdown("#### 🧬 数据血缘与逻辑配置")
     
@@ -488,14 +468,12 @@ elif st.session_state.page == 'mapping':
                 st.session_state.error_report = None
                 st.rerun()
 
-    # 3. 结果表切换
     df_c = st.session_state.mapping_config
     t1, t2, t3 = st.tabs(["结果表3 (底表)", "结果表2 (结算)", "结果表1 (工时)"])
     
     cols_a = list(st.session_state.data_store['A']['df'].columns) if has_files else []
     cols_b = list(st.session_state.data_store['B']['df'].columns) if has_files else []
 
-    # 4. 内容渲染 (Native Data Editor)
     with t1:
         UIComponents.render_native_editor(
             "全量明细底表：基于 Source A/B 进行清洗、聚合、关联计算后的宽表。",
