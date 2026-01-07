@@ -41,14 +41,14 @@ st.markdown("""
     }
     .ghost-btn button:hover { border-color: var(--red) !important; color: var(--red) !important; }
 
-    /* 修复：Dialog 居中与宽度优化 */
+    /* Dialog 居中与宽度优化 */
     div[data-testid="stDialog"] > div[role="dialog"] { 
         width: 80vw !important; 
         max-width: 1200px !important; 
-        margin: auto !important; /* 强制居中 */
+        margin: auto !important;
     }
     
-    /* 隐藏 Streamlit 默认的文件上传列表，由我们自定义的卡片接管 */
+    /* 隐藏 Streamlit 默认的文件上传列表 */
     div[data-testid="stFileUploader"] section > div:first-child { display: none; }
 </style>
 """, unsafe_allow_html=True)
@@ -64,10 +64,11 @@ if 'data_store' not in st.session_state:
     }
 
 # 状态机标志位
-if 'is_calculated' not in st.session_state: st.session_state.is_calculated = False  # 是否计算成功
-if 'result_zip' not in st.session_state: st.session_state.result_zip = None         # 结果缓存
-if 'error_report' not in st.session_state: st.session_state.error_report = None     # 错误列表
-if 'block_auto_run' not in st.session_state: st.session_state.block_auto_run = False # 阻断锁 (手动模式)
+if 'is_calculated' not in st.session_state: st.session_state.is_calculated = False
+if 'result_zip' not in st.session_state: st.session_state.result_zip = None
+if 'result_files' not in st.session_state: st.session_state.result_files = {} # 存储分项文件
+if 'error_report' not in st.session_state: st.session_state.error_report = None
+if 'block_auto_run' not in st.session_state: st.session_state.block_auto_run = False
 
 # ==========================================
 # 2. 侧边栏 (参数配置)
@@ -86,47 +87,41 @@ def reset_system():
     st.rerun()
 
 def load_file_content(file_obj, key):
-    """读取文件并立即存入 State，防止 UI 刷新丢失"""
     if file_obj:
         try:
             if file_obj.name.endswith('.csv'): df = pd.read_csv(file_obj)
             else: df = pd.read_excel(file_obj)
             df.columns = [str(c).strip() for c in df.columns]
-            
-            # 存入数据
             st.session_state.data_store[key]['df'] = df
             st.session_state.data_store[key]['name'] = file_obj.name
             
-            # 关键逻辑：如果是报错状态下重新上传，解锁旧错误，但保持阻断等待手动确认
             if st.session_state.block_auto_run:
-                st.session_state.error_report = None # 移除红色报错框
-                # block_auto_run 依然为 True，等待用户点"运行"
+                st.session_state.error_report = None
             
-            st.rerun() # 强制刷新以切换为卡片视图
+            st.rerun()
         except Exception as e:
             st.error(f"文件解析失败: {e}")
 
 def clear_file(key):
-    """删除文件"""
     st.session_state.data_store[key]['df'] = None
     st.session_state.data_store[key]['name'] = None
     st.session_state.is_calculated = False
     st.session_state.result_zip = None
+    st.session_state.result_files = {}
     st.session_state.error_report = None
-    st.session_state.block_auto_run = False # 文件都没了，恢复自动态
+    st.session_state.block_auto_run = False
     st.rerun()
 
 # ==========================================
-# 4. 界面布局 (Layout Implementation)
+# 4. 界面布局
 # ==========================================
 
 # --- Zone 1: Header ---
 st.title("😈 淡藤财务报表 Pro")
-st.caption("Minimalist Financial Settlement System | v3.1 Fixed")
+st.caption("Minimalist Financial Settlement System | v3.2 Full")
 
 # --- Zone 2: Upload Console ---
 with st.container(border=True):
-    # 顶部栏：标题 + 幽灵重置按钮
     c_h1, c_h2 = st.columns([8, 1])
     c_h1.markdown("### 📂 数据源控制台")
     with c_h2:
@@ -134,23 +129,18 @@ with st.container(border=True):
         if st.button("🗑️ 重置", help="清空所有"): reset_system()
         st.markdown('</div>', unsafe_allow_html=True)
 
-    # 上传/卡片区域
     c_u1, c_u2 = st.columns(2)
     
-    # 渲染器：根据是否有数据，渲染 上传框 OR 文件卡片
     def render_upload_slot(col, key, title):
         data = st.session_state.data_store[key]
         has_file = data['df'] is not None
-        is_error = st.session_state.error_report is not None # 是否处于全局报错态
+        is_error = st.session_state.error_report is not None
         
         with col:
             if not has_file:
-                # 状态 A: 空态 (显示上传器)
                 f = st.file_uploader(title, type=['xlsx', 'csv'], key=f"uploader_{key}")
                 if f: load_file_content(f, key)
             else:
-                # 状态 B: 实态 (显示文件卡片)
-                # 如果处于报错态，卡片边框变红
                 card_class = "file-card file-card-err" if is_error else "file-card"
                 st.markdown(f"""
                 <div class="{card_class}">
@@ -163,7 +153,6 @@ with st.container(border=True):
                     </div>
                 </div>
                 """, unsafe_allow_html=True)
-                # 删除按钮 (Streamlit 按钮只能在 markdown 外)
                 if st.button(f"❌ 移除 {key}", key=f"del_{key}", use_container_width=True):
                     clear_file(key)
 
@@ -173,75 +162,55 @@ with st.container(border=True):
 # --- Zone 3: Validation & Action ---
 st.divider()
 
-# 准备状态
 ready_to_run = (st.session_state.data_store['A']['df'] is not None and 
                 st.session_state.data_store['B']['df'] is not None)
 trigger_calc = False
 
-# 场景状态机
 if ready_to_run:
-    
-    # 场景 A: 结果已生成 -> 显示成功
     if st.session_state.is_calculated:
         st.success("✅ 校验通过，报表已生成！")
     
-    # 场景 B: 报错阻断态 -> 显示错误舱
     elif st.session_state.error_report is not None:
         err_df = st.session_state.error_report
-        
-        # 渲染一体化错误舱
         st.markdown(f"""
         <div class="error-box">
             <div class="error-header">🚨 校验失败：发现 {len(err_df)} 处阻断性错误</div>
             <p style="margin-bottom:1rem; opacity:0.8;">流程已暂停。请下载清单修复源文件，或使用在线外科手术修复。</p>
         </div>
         """, unsafe_allow_html=True)
-        
         st.dataframe(err_df, use_container_width=True, hide_index=True)
         
         c_act1, c_act2 = st.columns(2)
-        # 操作 1: 下载错误清单
         c_act1.download_button("📥 下载错误清单 (Excel)", 
                              err_df.to_csv(index=False).encode('utf-8-sig'), 
                              "错误清单.csv", "text/csv", use_container_width=True)
         
-        # 操作 2: 外科手术修复弹窗
-        # 定义弹窗逻辑 (已修复报错问题)
         @st.dialog("🛠️ 外科手术式修复 (仅显示错误行)", width="large")
         def surgical_fix_dialog():
             st.caption("🔴 红色单元格为必修项。修改后点击保存，系统将自动合并数据并重新计算。")
             
-            # === 核心修复逻辑：安全获取索引 ===
             def get_safe_indices(source_name):
-                # 1. 筛选出对应来源的错误
                 rows = err_df[err_df['来源'] == source_name]['原表行号']
-                # 2. 强制转为数字，无法转换的（如 '-'）会变成 NaN 并被丢弃
                 rows_numeric = pd.to_numeric(rows, errors='coerce').dropna()
-                # 3. 计算索引 (Excel行号 - 2)
-                if rows_numeric.empty:
-                    return []
+                if rows_numeric.empty: return []
                 return rows_numeric.unique().astype(int) - 2
 
             err_indices_a = get_safe_indices('Source A')
             err_indices_b = get_safe_indices('Source B')
             
-            # 过滤出需要修复的行 (Surgical Filter)
             df_a_fix = st.session_state.data_store['A']['df'].iloc[err_indices_a].copy() if len(err_indices_a)>0 else pd.DataFrame()
             df_b_fix = st.session_state.data_store['B']['df'].iloc[err_indices_b].copy() if len(err_indices_b)>0 else pd.DataFrame()
             
             t1, t2 = st.tabs([f"Source A 待修 ({len(df_a_fix)})", f"Source B 待修 ({len(df_b_fix)})"])
-            
             new_a, new_b = None, None
             
             with t1:
                 if not df_a_fix.empty:
                     gb = GridOptionsBuilder.from_dataframe(df_a_fix)
                     gb.configure_default_column(editable=True)
-                    # 样式：让错误行显眼
                     gb.configure_grid_options(getRowStyle={'background-color': '#2d1b1b'}) 
                     new_a = AgGrid(df_a_fix, gridOptions=gb.build(), height=300, key='fix_a')['data']
-                else: st.info("表 A 无需特定行修复（可能是工时不足等全局问题，请检查原数据）")
-                    
+                else: st.info("表 A 无需特定行修复（可能是全局性错误，如工时不足，请检查原始数据）")
             with t2:
                 if not df_b_fix.empty:
                     gb = GridOptionsBuilder.from_dataframe(df_b_fix)
@@ -251,21 +220,17 @@ if ready_to_run:
                 else: st.info("表 B 无需特定行修复")
             
             if st.button("💾 保存修复并自动重算", type="primary", use_container_width=True):
-                # 缝合逻辑 (Stitch back)
                 if new_a is not None:
                     fixed_df = pd.DataFrame(new_a)
                     for i, row in fixed_df.iterrows():
-                        # 使用索引回写原表
                         original_idx = df_a_fix.index[i] 
                         st.session_state.data_store['A']['df'].iloc[original_idx] = row
-                
                 if new_b is not None:
                     fixed_df_b = pd.DataFrame(new_b)
                     for i, row in fixed_df_b.iterrows():
                         original_idx = df_b_fix.index[i]
                         st.session_state.data_store['B']['df'].iloc[original_idx] = row
                 
-                # 解除阻断，触发重算
                 st.session_state.error_report = None
                 st.session_state.block_auto_run = False 
                 st.rerun()
@@ -273,14 +238,12 @@ if ready_to_run:
         if c_act2.button("🛠️ 打开在线修复", type="primary", use_container_width=True):
             surgical_fix_dialog()
 
-    # 场景 C: 等待手动触发 (重新上传了文件，但还未计算)
     elif st.session_state.block_auto_run:
         st.info("ℹ️ 源文件已更新，等待执行。")
         if st.button("▶️ 重新校验并计算", type="primary", use_container_width=True):
             trigger_calc = True
-            st.session_state.block_auto_run = False # 解锁
+            st.session_state.block_auto_run = False
             
-    # 场景 D: 默认自动触发 (无错误，无阻断)
     else:
         trigger_calc = True
 
@@ -294,21 +257,25 @@ if trigger_calc:
     
     errors = []
     
-    # 2. 规则校验 (Implementation of Rules)
-    
-    # 辅助：列查找
-    def find(df, keys):
-        for k in keys: 
-            if k in df.columns: return k
+    # 2. 列名映射与查找
+    def find_col(df, candidates):
+        for c in candidates: 
+            if c in df.columns: return c
         return None
     
-    col_a_spm = find(df_a, ['SPM', '项目编号', '标识符'])
-    col_a_hrs = find(df_a, ['工时', '交付工时'])
-    col_a_name = find(df_a, ['姓名', '人员'])
+    col_a_spm = find_col(df_a, ['SPM', '项目编号', '标识符'])
+    col_a_hrs = find_col(df_a, ['工时', '交付工时', '投入工时'])
+    col_a_name = find_col(df_a, ['姓名', '人员', '员工姓名'])
+    col_a_proj = find_col(df_a, ['项目', '所属项目']) or df_a.columns[0]
+    col_a_range = find_col(df_a, ['人事范围']) or df_a.columns[0]
+    col_a_contract = find_col(df_a, ['合同主体']) or df_a.columns[0]
+    col_a_sales = find_col(df_a, ['销售', '销售人员']) or df_a.columns[0]
+    col_a_dept = find_col(df_a, ['销售部门', '部门']) or df_a.columns[0]
     
-    col_b_spm = find(df_b, ['SPM', '项目编号', '费用归属项目'])
-    col_b_amt = find(df_b, ['金额', '报销金额', '总金额'])
-    col_b_name = find(df_b, ['姓名', '报销人', '出差人'])
+    col_b_spm = find_col(df_b, ['SPM', '项目编号', '费用归属项目'])
+    col_b_amt = find_col(df_b, ['金额', '报销金额', '总金额'])
+    col_b_name = find_col(df_b, ['姓名', '报销人', '出差人'])
+    col_b_type = find_col(df_b, ['产品类型', '费用类型']) or df_b.columns[0]
     
     # R1: 必填列存在性
     if not all([col_a_spm, col_a_hrs, col_a_name]): errors.append({'严重级': '阻断', '来源': 'Source A', '信息': '缺失关键列(SPM/工时/姓名)'})
@@ -316,18 +283,14 @@ if trigger_calc:
     
     if not errors:
         # R2 & R3: 数据清洗与数值校验
-        # 清洗 A 表工时
         df_a[col_a_hrs] = pd.to_numeric(df_a[col_a_hrs], errors='coerce').fillna(0)
-        # 负数检查 A
         neg_rows_a = df_a[df_a[col_a_hrs] < 0]
         for i, r in neg_rows_a.iterrows():
             errors.append({'严重级': '阻断', '来源': 'Source A', '原表行号': i+2, '信息': '工时不能为负数'})
             
-        # 清洗 B 表金额
         if df_b[col_b_amt].dtype == object:
             df_b[col_b_amt] = df_b[col_b_amt].astype(str).str.replace(',', '')
         df_b[col_b_amt] = pd.to_numeric(df_b[col_b_amt], errors='coerce').fillna(0)
-        # 负数检查 B
         neg_rows_b = df_b[df_b[col_b_amt] < 0]
         for i, r in neg_rows_b.iterrows():
             errors.append({'严重级': '阻断', '来源': 'Source B', '原表行号': i+2, '信息': '金额不能为负数'})
@@ -336,46 +299,110 @@ if trigger_calc:
         for i, r in df_a[df_a[col_a_spm].isnull() | (df_a[col_a_spm] == '')].iterrows():
              errors.append({'严重级': '阻断', '来源': 'Source A', '原表行号': i+2, '信息': 'SPM不能为空'})
              
-        # R5: 业务逻辑 - 工时阈值 (全局性错误，无特定行号)
+        # R5: 工时阈值
         agg_hrs = df_a.groupby(col_a_name)[col_a_hrs].sum()
         for name, h in agg_hrs.items():
             if h < MIN_HOURS:
                 errors.append({'严重级': '阻断', '来源': 'Source A', '原表行号': '-', '信息': f'人员[{name}] 总工时 {h} < 阈值 {MIN_HOURS}'})
                 
-        # R6: 孤立费用检查 (匹配性)
-        # 创建匹配键
+        # R6: 孤立费用检查
         df_a['key'] = df_a[col_a_name].astype(str).str.strip() + "_" + df_a[col_a_spm].astype(str).str.strip()
         df_b['key'] = df_b[col_b_name].astype(str).str.strip() + "_" + df_b[col_b_spm].astype(str).str.strip()
         
         valid_keys = set(df_a['key'].unique())
         orphan_rows = df_b[~df_b['key'].isin(valid_keys)]
-        
         for i, r in orphan_rows.iterrows():
              errors.append({'严重级': '阻断', '来源': 'Source B', '原表行号': i+2, '信息': f'无法匹配到交付人员: {r["key"]}'})
 
-    # 3. 结果判断
-    time.sleep(0.5)
+    time.sleep(0.3)
     
     if errors:
-        # ❌ 失败分支
         progress.empty()
         st.session_state.error_report = pd.DataFrame(errors)
-        st.session_state.block_auto_run = True # 开启手动锁
+        st.session_state.block_auto_run = True
         st.rerun()
     else:
-        # ✅ 成功分支
-        progress.progress(50, "正在生成报表...")
+        # ✅ 计算核心 (Calculation Logic Restored)
+        progress.progress(30, "正在计算维度数据...")
         
-        # 模拟生成逻辑 (这里可替换为完整计算逻辑)
-        res_df = df_a.copy()
-        res_df['结算金额'] = res_df[col_a_hrs] * PRICE_PER_DAY / 8
+        # 1. 聚合 A 表
+        agg_rules = {col_a_hrs: 'sum'}
+        for col in [col_a_proj, col_a_range, col_a_contract, col_a_sales, col_a_dept]:
+            if col: agg_rules[col] = 'first'
+            
+        df_a_gp = df_a.groupby([col_a_name, col_a_spm], as_index=False).agg(agg_rules)
         
-        # 打包
+        # 2. 拆分 B 表 (补助 vs 费控)
+        is_sub = df_b[col_b_type].astype(str).str.contains(SUBSIDY_TAG, na=False)
+        grp_b = [col_b_name, col_b_spm]
+        df_sub = df_b[is_sub].groupby(grp_b)[col_b_amt].sum().reset_index(name='差旅补助')
+        df_fee = df_b[~is_sub].groupby(grp_b)[col_b_amt].sum().reset_index(name='差旅费控平台')
+        
+        # 3. 合并
+        # 统一 key 类型
+        for df in [df_a_gp, df_sub, df_fee]:
+            df[col_a_spm if col_a_spm in df.columns else col_b_spm] = df[col_a_spm if col_a_spm in df.columns else col_b_spm].astype(str)
+            
+        res = pd.merge(df_a_gp, df_sub, left_on=[col_a_name, col_a_spm], right_on=[col_b_name, col_b_spm], how='left')
+        res = pd.merge(res, df_fee, left_on=[col_a_name, col_a_spm], right_on=[col_b_name, col_b_spm], how='left')
+        res = res.fillna(0)
+        
+        # 4. 算钱
+        res['支持时间(人天)'] = res[col_a_hrs] / 8
+        res['人力费用'] = res['支持时间(人天)'] * PRICE_PER_DAY
+        res['结算费用合计'] = res['人力费用'] + res['差旅补助'] + res['差旅费控平台']
+        
+        progress.progress(70, "正在生成分项报表...")
+        
+        # === 生成表 3 (明细) ===
+        t3_cols_map = {
+            col_a_name: '人员', col_a_proj: '所属项目', col_a_range: '人事范围',
+            col_a_spm: 'SPM', col_a_contract: '合同主体', col_a_sales: '销售人员',
+            col_a_dept: '销售部门', col_a_hrs: '耗时(小时)'
+        }
+        t3 = res.rename(columns=t3_cols_map)
+        final_cols = ['序号', '人员', '所属项目', '人事范围', 'SPM', '合同主体', '销售人员', '销售部门',
+                      '差旅补助', '差旅费控平台', '耗时(小时)', '支持时间(人天)', '人力费用', '结算费用合计']
+        t3.insert(0, '序号', range(1, len(t3)+1))
+        # 仅保留存在的列
+        t3 = t3[[c for c in final_cols if c in t3.columns]]
+        
+        # === 生成表 2 (结算汇总) ===
+        # 维度：人事范围、合同主体、销售部门
+        dim_cols = ['人事范围', '合同主体', '销售部门']
+        # 确保这些列都在 t3 中
+        valid_dims = [c for c in dim_cols if c in t3.columns]
+        
+        if valid_dims:
+            t2 = t3.groupby(valid_dims).agg({'结算费用合计': 'sum', '支持时间(人天)': 'sum'}).reset_index()
+            t2.columns = ['销售公司', '采购公司', '采购部门', '金额(含税,单位:元)', '工作量(人天)']
+            t2.insert(0, '序号', range(1, len(t2)+1))
+        else:
+            t2 = pd.DataFrame({'提示': ['缺少维度字段，无法生成结算表']})
+
+        # === 生成表 1 (工时统计) ===
+        t1 = t3.groupby('人员')['耗时(小时)'].sum().reset_index()
+        t1.rename(columns={'耗时(小时)': '项目工时'}, inplace=True)
+        t1.insert(0, '序号', range(1, len(t1)+1))
+        
+        # 5. 打包结果
+        def to_bytes(df):
+            out = io.BytesIO()
+            with pd.ExcelWriter(out, engine='xlsxwriter') as w: df.to_excel(w, index=False)
+            return out.getvalue()
+
+        b1, b2, b3 = to_bytes(t1), to_bytes(t2), to_bytes(t3)
+        
+        # 存入 Session State
+        st.session_state.result_files = {
+            't1': b1, 't2': b2, 't3': b3
+        }
+        
         buffer = io.BytesIO()
         with zipfile.ZipFile(buffer, 'w') as zf:
-            with pd.ExcelWriter(io.BytesIO(), engine='xlsxwriter') as w:
-                res_df.to_excel(w, sheet_name='结算明细')
-            zf.writestr("结算报表.xlsx", buffer.getvalue())
+            zf.writestr("表1_工时统计.xlsx", b1)
+            zf.writestr("表2_结算汇总.xlsx", b2)
+            zf.writestr("表3_详细明细.xlsx", b3)
             
         st.session_state.result_zip = buffer.getvalue()
         st.session_state.is_calculated = True
@@ -387,12 +414,26 @@ if trigger_calc:
 if st.session_state.is_calculated and st.session_state.result_zip:
     with st.container(border=True):
         st.markdown("### 📥 报表下载")
+        
+        # 批量下载
         st.download_button(
             "📦 批量下载所有报表 (ZIP)", 
             st.session_state.result_zip, 
-            "淡藤财务报表.zip", 
+            "淡藤财务报表_汇总.zip", 
             "application/zip", 
             type="primary", 
             use_container_width=True
         )
-        st.caption("分项下载功能将在后续版本开放")
+        
+        st.markdown("---")
+        
+        # 分项下载 (回归！)
+        cols_d = st.columns(3)
+        files = st.session_state.result_files
+        
+        if 't1' in files:
+            cols_d[0].download_button("📥 表1 (工时)", files['t1'], "表1_工时统计.xlsx", use_container_width=True)
+        if 't2' in files:
+            cols_d[1].download_button("📥 表2 (结算)", files['t2'], "表2_结算汇总.xlsx", use_container_width=True)
+        if 't3' in files:
+            cols_d[2].download_button("📥 表3 (明细)", files['t3'], "表3_详细明细.xlsx", use_container_width=True)
