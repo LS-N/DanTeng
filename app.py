@@ -13,11 +13,11 @@ st.set_page_config(page_title="淡藤财务报表 Pro", page_icon="😈", layout
 def inject_css():
     st.markdown("""
     <style>
-        :root { --bg-color: #0d1117; --card-bg: #161b22; --accent: #238636; --text: #c9d1d9; --border-color: #6e7681; }
+        :root { --bg-color: #0d1117; --card-bg: #161b22; --accent: #238636; --text: #c9d1d9; --border-color: #555c65; }
         .stApp { background-color: var(--bg-color); color: var(--text); }
         
         /* [UI] 顶部导航 */
-        .nav-header { font-size: 1.2rem; font-weight: bold; margin-bottom: 20px; }
+        .nav-header { font-size: 1.2rem; font-weight: bold; margin-bottom: 10px; display:flex; align-items:center; height: 100%; }
         
         /* [UI] 幽灵按钮 */
         .ghost-btn button { border: 1px dashed #444 !important; color: #888 !important; background: transparent !important; }
@@ -27,57 +27,79 @@ def inject_css():
             background-color: rgba(56, 139, 253, 0.1);
             border-left: 4px solid #58a6ff;
             color: #c9d1d9;
-            padding: 10px 15px;
-            margin-bottom: 15px;
+            padding: 8px 15px;
+            margin-bottom: 20px;
             font-size: 0.9rem;
         }
 
-        /* [核心] 表格容器 */
-        .grid-container {
-            border-top: 1px solid var(--border-color);
-            border-left: 1px solid var(--border-color);
+        /* [核心] Excel 表格容器 */
+        .excel-table-wrapper {
+            display: flex;
+            flex-direction: column;
+            border: 1px solid var(--border-color); /* 外框 */
+            border-radius: 4px;
             background-color: #0d1117;
-            margin-bottom: 20px;
+            overflow: hidden;
         }
 
-        /* [核心] 单元格通用样式 */
-        .grid-cell {
-            border-right: 1px solid var(--border-color);
-            border-bottom: 1px solid var(--border-color);
-            padding: 8px 5px;
+        /* [核心] 通用行 (Flex布局) */
+        .excel-row {
+            display: flex;
+            width: 100%;
+            border-bottom: 1px solid var(--border-color); /* 行分割线 */
+            margin: 0 !important;
+            padding: 0 !important;
+            min-height: 45px; /* 固定行高 */
+        }
+        .excel-row:last-child { border-bottom: none; } /* 最后一行去底边框 */
+
+        /* [核心] 单元格 */
+        .excel-cell {
+            border-right: 1px solid var(--border-color); /* 列分割线 */
             display: flex;
             align-items: center;     /* 垂直居中 */
             justify-content: center; /* 水平居中 */
             text-align: center;
-            min-height: 50px;        /* 强制高度一致 */
-            height: 100%;
-            font-size: 0.85rem;
+            padding: 5px;
+            font-size: 0.9rem;
+            color: #c9d1d9;
+            position: relative; /* 为select定位 */
         }
+        .excel-cell:last-child { border-right: none; } /* 最后一列去右边框 */
 
         /* 表头特定样式 */
-        .grid-header {
+        .header-row {
             background-color: #161b22;
             font-weight: bold;
             color: #fff;
         }
 
-        /* 标签样式 */
+        /* 列宽定义 (严格百分比，必须与 st.columns 一致) */
+        .w-target { width: 25%; }
+        .w-match  { width: 30%; }
+        .w-source { width: 15%; }
+        .w-logic  { width: 30%; }
+
+        /* 标签 */
         .source-tag { padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 500; }
         .tag-source { background: rgba(56, 139, 253, 0.15); color: #58a6ff; border: 1px solid rgba(56, 139, 253, 0.4); }
         .tag-result { background: rgba(238, 138, 36, 0.15); color: #db8e37; border: 1px solid rgba(238, 138, 36, 0.4); }
 
-        /* Streamlit 组件修正 */
+        /* [HACK] Streamlit 组件修正 */
         div[data-testid="stFileUploader"] section > div:first-child { display: none; }
         div[data-testid="stFileUploader"] { padding-top: 15px; }
         
-        /* 强制 Selectbox 填满单元格且居中 */
-        div[data-testid="stSelectbox"] { width: 90%; margin: 0 auto; }
+        /* 强制 Selectbox 填满单元格 */
+        div[data-testid="stSelectbox"] { margin-bottom: 0px !important; margin-top: 0px !important; }
         div[data-testid="stSelectbox"] > div > div { 
-            min-height: 35px; border-color: #30363d; background-color: #0d1117; 
+            min-height: 35px; border-color: transparent; background-color: transparent; 
         }
+        /* 选中项颜色 */
+        div[data-testid="stSelectbox"] div[data-baseweb="select"] span { color: #a5d6ff !important; font-family: monospace; }
         
-        /* 隐藏列间隙 */
+        /* 隐藏 Streamlit 默认列间距 */
         div[data-testid="column"] { padding: 0 !important; }
+        div[data-testid="stVerticalBlock"] > div { gap: 0 !important; } /* 消除垂直间距的关键 */
     </style>
     """, unsafe_allow_html=True)
 
@@ -313,48 +335,57 @@ class UIComponents:
         # 4. 用途说明
         st.markdown(f'<div class="info-bar">ℹ️ {description}</div>', unsafe_allow_html=True)
         
-        # 表格外框容器
-        st.markdown('<div class="grid-container">', unsafe_allow_html=True)
+        # 表格容器开头
+        st.markdown('<div class="excel-table-wrapper">', unsafe_allow_html=True)
         
         # --- 表头 ---
-        c1, c2, c3, c4 = st.columns([2.5, 3.5, 1.5, 2.5])
-        with c1: st.markdown('<div class="grid-cell grid-header">目标字段</div>', unsafe_allow_html=True)
-        with c2: st.markdown('<div class="grid-cell grid-header">匹配字段</div>', unsafe_allow_html=True)
-        with c3: st.markdown('<div class="grid-cell grid-header">源表</div>', unsafe_allow_html=True)
-        with c4: st.markdown('<div class="grid-cell grid-header" style="border-right:none;">逻辑说明</div>', unsafe_allow_html=True)
+        st.markdown("""
+        <div class="excel-row header-row">
+            <div class="excel-cell w-target">目标字段</div>
+            <div class="excel-cell w-match">匹配字段</div>
+            <div class="excel-cell w-source">源表</div>
+            <div class="excel-cell w-logic">逻辑说明</div>
+        </div>
+        """, unsafe_allow_html=True)
         
         # --- 内容行 ---
         for idx, row in subset.iterrows():
             is_result_source = row['源表'] == '结果表3'
             
-            # 使用 columns 布局内容
-            c1, c2, c3, c4 = st.columns([2.5, 3.5, 1.5, 2.5])
+            # 使用 container wrapper (excel-row)
+            st.markdown('<div class="excel-row">', unsafe_allow_html=True)
+            
+            # 使用 st.columns 实现内容，但完全依赖 CSS 去除间距
+            c1, c2, c3, c4 = st.columns([25, 30, 15, 30])
             
             with c1:
-                st.markdown(f'<div class="grid-cell" style="font-weight:bold;">{row["目标字段"]}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="excel-cell" style="width:100%; border-bottom:none; border-right:none;"><strong>{row["目标字段"]}</strong></div>', unsafe_allow_html=True)
             
             with c2:
+                # 交互列
                 if st.session_state.is_editing_mapping and not is_result_source:
                     opts = cols_a if row['源表']=='Source A' else cols_b
                     cur = row['匹配字段']
                     if cur not in opts: opts = [cur] + opts
-                    # 这一列用 DIV 包裹 selectbox，通过 CSS hack 消除间距
-                    st.markdown('<div class="grid-cell">', unsafe_allow_html=True)
+                    # 包裹 selectbox
+                    st.markdown('<div class="excel-cell" style="width:100%; border-bottom:none; border-right:none; padding:0;">', unsafe_allow_html=True)
                     new_val = st.selectbox("s", opts, index=opts.index(cur), key=f"s_{idx}", label_visibility="collapsed")
-                    st.markdown('</div>', unsafe_allow_html=True)
                     st.session_state.mapping_config.at[idx, '匹配字段'] = new_val
+                    st.markdown('</div>', unsafe_allow_html=True)
                 else:
                     color = "#a5d6ff" if not is_result_source else "#8b949e"
-                    st.markdown(f'<div class="grid-cell" style="color:{color}; font-family:monospace;">{row["匹配字段"]}</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="excel-cell" style="width:100%; border-bottom:none; border-right:none; color:{color}; font-family:monospace;">{row["匹配字段"]}</div>', unsafe_allow_html=True)
             
             with c3:
                 tag_cls = 'tag-result' if is_result_source else 'tag-source'
-                st.markdown(f'<div class="grid-cell"><span class="source-tag {tag_cls}">{row["源表"]}</span></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="excel-cell" style="width:100%; border-bottom:none; border-right:none;"><span class="source-tag {tag_cls}">{row["源表"]}</span></div>', unsafe_allow_html=True)
             
             with c4:
-                st.markdown(f'<div class="grid-cell" style="border-right:none; color:#888;">{row["计算逻辑"]}</div>', unsafe_allow_html=True)
-        
-        st.markdown('</div>', unsafe_allow_html=True) # End grid-container
+                st.markdown(f'<div class="excel-cell" style="width:100%; border-bottom:none; border-right:none; color:#888;">{row["计算逻辑"]}</div>', unsafe_allow_html=True)
+                
+            st.markdown('</div>', unsafe_allow_html=True) # End excel-row
+
+        st.markdown('</div>', unsafe_allow_html=True) # End excel-table-wrapper
 
 # ==============================================================================
 # Zone C: 控制层 (Controller)
@@ -484,10 +515,10 @@ if st.session_state.page == 'main':
                 st.rerun()
 
 elif st.session_state.page == 'mapping':
-    # 1. 顶部导航 (Title + Return)
+    # 1. 顶部导航 (Title + Small Return Button)
     c1, c2 = st.columns([9, 1])
     c1.markdown("<div class='nav-header'>🐱 字段映射 & 逻辑配置</div>", unsafe_allow_html=True)
-    if c2.button("⬅️ 返回", use_container_width=True): 
+    if c2.button("⬅️", use_container_width=True, help="返回主页"): 
         st.session_state.page = 'main'
         st.rerun()
     
