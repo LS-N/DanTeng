@@ -18,83 +18,97 @@ def inject_css():
         
         /* [UI] 卡片 */
         .file-card-styled { 
-            background: #21262d; border-left: 4px solid #238636; border-radius: 4px; padding: 15px; 
-            width: 100%; height: 100%; display: flex; align-items: center; justify-content: space-between; 
+            background: #21262d; border-left: 4px solid #238636; border-radius: 6px; padding: 15px; 
+            width: 100%; display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px;
         }
         /* [UI] 错误舱 */
         .error-box { border: 1px solid var(--red); background: rgba(218, 54, 51, 0.1); border-radius: 8px; padding: 1.5rem; margin-top: 1rem; }
+        
+        /* [UI] 映射控制台样式 */
+        .mapping-container {
+            background-color: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 20px;
+            height: 100%;
+        }
+        .mapping-header {
+            font-size: 1.1rem; font-weight: bold; color: #fff; margin-bottom: 15px; border-bottom: 1px solid #30363d; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: center;
+        }
+        .group-title {
+            font-size: 0.85rem; color: #8b949e; font-weight: 600; margin-top: 15px; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px;
+        }
+        .field-row {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 8px 10px; background: #0d1117; border-radius: 4px; margin-bottom: 6px; border: 1px solid #21262d;
+        }
+        .field-label { font-size: 0.9rem; font-weight: 500; color: #c9d1d9; }
+        .field-desc { font-size: 0.75rem; color: #484f58; margin-top: 2px; }
+        .status-dot { height: 8px; width: 8px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+        .status-ok { background-color: #238636; box-shadow: 0 0 5px #238636; }
+        .status-err { background-color: #da3633; box-shadow: 0 0 5px #da3633; }
+        .status-wait { background-color: #484f58; }
+        
         /* [UI] 按钮 */
         .ghost-btn button { border: 1px dashed #444 !important; color: #888 !important; background: transparent !important; }
         .cat-btn button { border: 1px solid #30363d !important; background: #161b22 !important; color: #c9d1d9 !important; width: 100%; margin-top: 10px; }
         .cat-btn button:hover { border-color: #a371f7 !important; color: #a371f7 !important; }
         
-        /* [UI] 映射表 */
-        .mapping-table { border: 1px solid #30363d; border-radius: 6px; overflow: hidden; background-color: #0d1117; margin-bottom: 20px; }
-        .map-header-row { background-color: #161b22; border-bottom: 1px solid #30363d; padding: 12px 10px; font-weight: 600; color: #8b949e; display: flex; align-items: center; }
-        .map-data-row { padding: 10px 10px; border-bottom: 1px solid #21262d; display: flex; align-items: center; background-color: #0d1117; }
-        .source-tag { background: rgba(56, 139, 253, 0.1); border: 1px solid rgba(56, 139, 253, 0.4); border-radius: 10px; padding: 2px 8px; font-size: 0.7rem; color: #58a6ff; }
-        
+        /* 隐藏上传组件默认列表 */
         div[data-testid="stFileUploader"] section > div:first-child { display: none; }
         div[data-testid="stFileUploader"] { padding-top: 15px; }
+        /* 紧凑下拉框 */
+        div[data-testid="stSelectbox"] > div > div { min-height: 32px; font-size: 0.85rem; }
     </style>
     """, unsafe_allow_html=True)
 
 # ==============================================================================
-# Zone A: 纯逻辑层 (DataEngine) - 核心清洗与计算
+# Zone A: 纯逻辑层 (DataEngine)
 # ==============================================================================
 class DataEngine:
     @staticmethod
     def get_default_config():
         """
-        定义字段映射默认配置
-        严格依据用户提供的 Excel 文件表头
+        配置表结构：增加 '分组' 字段用于 UI 分区展示
         """
         return pd.DataFrame([
-            # --- 输入映射：Source A (工时表) ---
-            {"所属表": "输入映射", "目标字段": "人员", "源表": "Source A", "匹配字段": "人员", "计算逻辑": "主键 (Join Key)"},
-            {"所属表": "输入映射", "目标字段": "SPM", "源表": "Source A", "匹配字段": "SPM", "计算逻辑": "主键 (Join Key)"},
-            {"所属表": "输入映射", "目标字段": "耗时(小时)", "源表": "Source A", "匹配字段": "交付工时", "计算逻辑": "数值源 (SUM聚合)"},
-            {"所属表": "输入映射", "目标字段": "所属项目", "源表": "Source A", "匹配字段": "所属项目", "计算逻辑": "维度 (First)"},
-            {"所属表": "输入映射", "目标字段": "人事范围", "源表": "Source A", "匹配字段": "人事范围", "计算逻辑": "维度 (对应销售公司)"},
-            {"所属表": "输入映射", "目标字段": "合同主体", "源表": "Source A", "匹配字段": "合同主体", "计算逻辑": "维度 (对应采购公司)"},
-            {"所属表": "输入映射", "目标字段": "销售人员", "源表": "Source A", "匹配字段": "销售", "计算逻辑": "维度 (First)"},
-            {"所属表": "输入映射", "目标字段": "销售部门", "源表": "Source A", "匹配字段": "销售部门", "计算逻辑": "维度 (对应采购部门)"},
+            # --- Source A: 工时表 ---
+            {"所属表": "表3", "目标字段": "人员", "源表": "Source A", "匹配字段": "人员", "分组": "🔑 关联主键", "逻辑": "Join Key"},
+            {"所属表": "表3", "目标字段": "SPM", "源表": "Source A", "匹配字段": "SPM", "分组": "🔑 关联主键", "逻辑": "Join Key"},
+            {"所属表": "表3", "目标字段": "工时", "源表": "Source A", "匹配字段": "交付工时", "分组": "📊 核心指标", "逻辑": "SUM聚合"},
             
-            # --- 输入映射：Source B (费用表) ---
-            {"所属表": "输入映射", "目标字段": "人员 (B)", "源表": "Source B", "匹配字段": "出差人", "计算逻辑": "外键 (Join Key)"},
-            {"所属表": "输入映射", "目标字段": "SPM (B)", "源表": "Source B", "匹配字段": "SPM", "计算逻辑": "外键 (Join Key)"},
-            {"所属表": "输入映射", "目标字段": "金额", "源表": "Source B", "匹配字段": "金额", "计算逻辑": "数值源 (SUM聚合)"},
-            {"所属表": "输入映射", "目标字段": "费用类型", "源表": "Source B", "匹配字段": "产品类型", "计算逻辑": "分类依据 (区分补助/费控)"},
-
-            # --- 输出逻辑展示 (仅展示，代码中逻辑已固化) ---
-            {"所属表": "输出逻辑", "目标字段": "结果表3 (底表)", "源表": "A + B", "匹配字段": "Left Join", "计算逻辑": "全量明细计算"},
-            {"所属表": "输出逻辑", "目标字段": "结果表2 (结算)", "源表": "结果表3", "匹配字段": "按公司/部门聚合", "计算逻辑": "SUM(金额), SUM(人天)"},
-            {"所属表": "输出逻辑", "目标字段": "结果表1 (工时)", "源表": "结果表3", "匹配字段": "按人员聚合", "计算逻辑": "SUM(耗时)"},
+            {"所属表": "表3", "目标字段": "所属项目", "源表": "Source A", "匹配字段": "所属项目", "分组": "🏷️ 维度属性", "逻辑": "维度"},
+            {"所属表": "表3", "目标字段": "人事范围", "源表": "Source A", "匹配字段": "人事范围", "分组": "🏷️ 维度属性", "逻辑": "-> 销售公司"},
+            {"所属表": "表3", "目标字段": "合同主体", "源表": "Source A", "匹配字段": "合同主体", "分组": "🏷️ 维度属性", "逻辑": "-> 采购公司"},
+            {"所属表": "表3", "目标字段": "销售人员", "源表": "Source A", "匹配字段": "销售", "分组": "🏷️ 维度属性", "逻辑": "维度"},
+            {"所属表": "表3", "目标字段": "销售部门", "源表": "Source A", "匹配字段": "销售部门", "分组": "🏷️ 维度属性", "逻辑": "-> 采购部门"},
+            
+            # --- Source B: 费用表 ---
+            {"所属表": "表3", "目标字段": "人员 (B)", "源表": "Source B", "匹配字段": "出差人", "分组": "🔑 关联主键", "逻辑": "Join Key"},
+            {"所属表": "表3", "目标字段": "SPM (B)", "源表": "Source B", "匹配字段": "SPM", "分组": "🔑 关联主键", "逻辑": "Join Key"},
+            {"所属表": "表3", "目标字段": "金额", "源表": "Source B", "匹配字段": "金额", "分组": "📊 核心指标", "逻辑": "SUM聚合"},
+            {"所属表": "表3", "目标字段": "费用类型", "源表": "Source B", "匹配字段": "产品类型", "分组": "🧬 分类依据", "逻辑": "补助/费控"},
         ])
 
     @staticmethod
     def get_col(config_df, target, source_table):
-        """根据目标字段名获取用户配置的源列名"""
         row = config_df[(config_df['目标字段'] == target) & (config_df['源表'] == source_table)]
         if row.empty: return None
         return str(row.iloc[0]['匹配字段']).strip()
 
     @staticmethod
     def clean_num(df, col):
-        """清洗数字列"""
         if col not in df.columns: return 0
         return pd.to_numeric(df[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
 
     @staticmethod
     def validate(df_a, df_b, config_df, min_hours):
-        """校验逻辑：基于配置的列名进行检查"""
         errors = []
-        # 快捷获取列名函数
         c = lambda t, s: DataEngine.get_col(config_df, t, s)
         
-        # 1. 获取当前配置的列名
+        # 1. 映射字典
         map_a = {
-            '人员': c('人员', 'Source A'), 'SPM': c('SPM', 'Source A'), '耗时': c('耗时(小时)', 'Source A'),
+            '人员': c('人员', 'Source A'), 'SPM': c('SPM', 'Source A'), '耗时': c('工时', 'Source A'),
             '项目': c('所属项目', 'Source A'), '范围': c('人事范围', 'Source A'), '合同': c('合同主体', 'Source A'),
             '销售': c('销售人员', 'Source A'), '部门': c('销售部门', 'Source A')
         }
@@ -103,7 +117,7 @@ class DataEngine:
             '金额': c('金额', 'Source B'), '类型': c('费用类型', 'Source B')
         }
         
-        # 2. 存在性检查 (Logic Error)
+        # 2. 存在性检查
         def check_exist(df, col, src, target):
             if col and col not in df.columns:
                 errors.append({'类型':'逻辑错误', '来源':src, '_sys_id':'-', '行号':'-', '信息':f'缺列: {col} (目标:{target})'})
@@ -113,32 +127,28 @@ class DataEngine:
         valid_a = all([check_exist(df_a, col, 'Source A', t) for t, col in map_a.items() if col])
         valid_b = all([check_exist(df_b, col, 'Source B', t) for t, col in map_b.items() if col])
         
-        if not (valid_a and valid_b): return errors, df_a, df_b # 阻断
+        if not (valid_a and valid_b): return errors, df_a, df_b
 
-        # 3. 数值清洗 (临时)
+        # 3. 数值清洗
         df_a_clean = df_a.copy()
         df_b_clean = df_b.copy()
         df_a_clean[map_a['耗时']] = DataEngine.clean_num(df_a_clean, map_a['耗时'])
         df_b_clean[map_b['金额']] = DataEngine.clean_num(df_b_clean, map_b['金额'])
 
-        # 4. 数据错误 (负数/空值)
-        # A表
+        # 4. 数据错误
         for i, r in df_a_clean[df_a_clean[map_a['耗时']] < 0].iterrows():
             errors.append({'类型':'数据错误', '来源':'Source A', '_sys_id':r['_sys_id'], '行号':r['_sys_id'], '信息':'工时为负'})
         for i, r in df_a[df_a[map_a['SPM']].isnull() | (df_a[map_a['SPM']] == '')].iterrows():
              errors.append({'类型':'数据错误', '来源':'Source A', '_sys_id':r['_sys_id'], '行号':r['_sys_id'], '信息':'SPM为空'})
-        # B表
         for i, r in df_b_clean[df_b_clean[map_b['金额']] < 0].iterrows():
             errors.append({'类型':'数据错误', '来源':'Source B', '_sys_id':r['_sys_id'], '行号':r['_sys_id'], '信息':'金额为负'})
 
-        # 5. 业务逻辑 (阈值 & 孤立费用)
-        # 阈值
+        # 5. 业务逻辑
         agg = df_a_clean.groupby(map_a['人员'])[map_a['耗时']].sum()
         for n, h in agg.items():
             if h < min_hours:
                  errors.append({'类型':'逻辑错误', '来源':'Source A', '_sys_id':'-', '行号':'-', '信息':f'人员[{n}]总工时({h}) < 阈值'})
         
-        # 孤立费用 (Match Key)
         df_a['key'] = df_a[map_a['人员']].astype(str) + "_" + df_a[map_a['SPM']].astype(str)
         df_b['key'] = df_b[map_b['人员']].astype(str) + "_" + df_b[map_b['SPM']].astype(str)
         
@@ -150,50 +160,38 @@ class DataEngine:
 
     @staticmethod
     def calculate(df_a, df_b, config_df, price_per_day, subsidy_tag):
-        """核心计算引擎"""
         c = lambda t, s: DataEngine.get_col(config_df, t, s)
         
-        # --- 1. 读取配置 ---
-        # A表字段
+        # 字段获取
         col_a_user = c('人员', 'Source A')
         col_a_spm = c('SPM', 'Source A')
-        col_a_hrs = c('耗时(小时)', 'Source A')
-        # 维度
+        col_a_hrs = c('工时', 'Source A')
         dims = {
-            'project': c('所属项目', 'Source A'), 
-            'range': c('人事范围', 'Source A'), 
-            'contract': c('合同主体', 'Source A'),
-            'sales': c('销售人员', 'Source A'), 
-            'dept': c('销售部门', 'Source A')
+            'project': c('所属项目', 'Source A'), 'range': c('人事范围', 'Source A'), 'contract': c('合同主体', 'Source A'),
+            'sales': c('销售人员', 'Source A'), 'dept': c('销售部门', 'Source A')
         }
-        # B表字段
         col_b_user = c('人员 (B)', 'Source B')
         col_b_spm = c('SPM (B)', 'Source B')
         col_b_amt = c('金额', 'Source B')
         col_b_type = c('费用类型', 'Source B')
 
-        # --- 2. 清洗 ---
+        # 清洗
         df_a[col_a_hrs] = DataEngine.clean_num(df_a, col_a_hrs)
         df_b[col_b_amt] = DataEngine.clean_num(df_b, col_b_amt)
 
-        # --- 3. 聚合 A表 (工时流) ---
-        # GroupBy: [User, SPM]
+        # A表聚合
         agg_rules = {col_a_hrs: 'sum'}
         for _, col in dims.items():
             if col: agg_rules[col] = 'first'
-        
         df_a_gp = df_a.groupby([col_a_user, col_a_spm], as_index=False).agg(agg_rules)
 
-        # --- 4. 聚合 B表 (费用流) ---
-        # 拆分补助与非补助
+        # B表聚合
         is_sub = df_b[col_b_type].astype(str).str.contains(subsidy_tag, na=False)
         grp_b = [col_b_user, col_b_spm]
-        
         df_sub = df_b[is_sub].groupby(grp_b)[col_b_amt].sum().reset_index(name='差旅补助')
         df_fee = df_b[~is_sub].groupby(grp_b)[col_b_amt].sum().reset_index(name='差旅费控平台')
 
-        # --- 5. 合并 (Left Join: A Left B) ---
-        # 统一类型防关联失败
+        # 合并
         df_a_gp[col_a_spm] = df_a_gp[col_a_spm].astype(str)
         df_sub[col_b_spm] = df_sub[col_b_spm].astype(str)
         df_fee[col_b_spm] = df_fee[col_b_spm].astype(str)
@@ -202,15 +200,12 @@ class DataEngine:
         res = pd.merge(res, df_fee, left_on=[col_a_user, col_a_spm], right_on=[col_b_user, col_b_spm], how='left')
         res = res.fillna(0)
 
-        # --- 6. 核心算钱公式 ---
-        # 支持时间(人天) = 耗时 / 8
+        # 计算
         res['支持时间(人天)'] = res[col_a_hrs] / 8
-        # 人力费用 = 人天 * 单价
         res['人力费用'] = res['支持时间(人天)'] * price_per_day
-        # 总费用 = 人力 + 补助 + 费控
         res['结算费用合计'] = res['人力费用'] + res['差旅补助'] + res['差旅费控平台']
 
-        # --- 7. 生成结果表3 (底表) ---
+        # 结果表3
         rename_map = {
             col_a_user: '人员', dims['project']: '所属项目', dims['range']: '人事范围',
             col_a_spm: 'SPM', dims['contract']: '合同主体', dims['sales']: '销售人员',
@@ -219,32 +214,27 @@ class DataEngine:
         rename_map = {k:v for k,v in rename_map.items() if k in res.columns}
         t3 = res.rename(columns=rename_map)
         
-        # 字段排序
-        cols_order = ['序号','人员','所属项目','人事范围','SPM','合同主体','销售人员','销售部门',
+        final_cols = ['序号','人员','所属项目','人事范围','SPM','合同主体','销售人员','销售部门',
                       '差旅补助','差旅费控平台','耗时(小时)','支持时间(人天)','人力费用','结算费用合计']
         t3.insert(0, '序号', range(1, len(t3)+1))
-        t3 = t3[[c for c in cols_order if c in t3.columns]]
+        t3 = t3[[c for c in final_cols if c in t3.columns]]
 
-        # --- 8. 生成结果表2 (结算汇总) ---
-        # 来源：结果表3
-        # 分组：人事范围(销售公司) + 合同主体(采购公司) + 销售部门(采购部门)
+        # 结果表2
         dims_t2 = ['人事范围', '合同主体', '销售部门']
         if all(c in t3.columns for c in dims_t2):
             t2 = t3.groupby(dims_t2).agg({'结算费用合计': 'sum', '支持时间(人天)': 'sum'}).reset_index()
             t2.columns = ['销售公司', '采购公司', '采购部门', '金额(含税,单位:元)', '工作量(人天)']
             t2.insert(0, '序号', range(1, len(t2)+1))
         else:
-            t2 = pd.DataFrame({'提示': ['底表缺少维度字段，无法聚合表2']})
+            t2 = pd.DataFrame({'提示': ['缺少维度字段']})
 
-        # --- 9. 生成结果表1 (工时统计) ---
-        # 来源：结果表3
-        # 分组：人员
+        # 结果表1
         if '人员' in t3.columns and '耗时(小时)' in t3.columns:
             t1 = t3.groupby('人员')['耗时(小时)'].sum().reset_index()
             t1.rename(columns={'耗时(小时)': '项目工时'}, inplace=True)
             t1.insert(0, '序号', range(1, len(t1)+1))
         else:
-            t1 = pd.DataFrame({'提示': ['底表缺少人员或耗时字段，无法聚合表1']})
+            t1 = pd.DataFrame({'提示': ['缺少人员字段']})
 
         return {'t1': t1, 't2': t2, 't3': t3}
 
@@ -268,7 +258,7 @@ class UIComponents:
             s = st.text_input("补助关键词", "差旅补助")
             st.markdown("---")
             st.markdown('<div class="cat-btn">', unsafe_allow_html=True)
-            if st.button("🐱 字段映射配置", help="自定义匹配规则"):
+            if st.button("🐱 字段映射配置", help="进入映射控制台"):
                 st.session_state.page = 'mapping'
                 st.rerun()
             st.markdown('</div>', unsafe_allow_html=True)
@@ -289,6 +279,71 @@ class UIComponents:
         return None
 
     @staticmethod
+    def render_mapping_panel(source_name, title, df_config, file_cols, is_edit):
+        """渲染单个源表的配置面板"""
+        st.markdown(f"""
+        <div class="mapping-container">
+            <div class="mapping-header">
+                <span>{title}</span>
+                <span style="font-size:0.8rem; color:#238636; font-weight:normal;">
+                    {'🟢 已连接' if file_cols else '⚪ 待上传'}
+                </span>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        subset = df_config[df_config['源表'] == source_name]
+        
+        # 按分组渲染
+        for group in subset['分组'].unique():
+            st.markdown(f"<div class='group-title'>{group}</div>", unsafe_allow_html=True)
+            group_data = subset[subset['分组'] == group]
+            
+            for idx, row in group_data.iterrows():
+                # 状态检测
+                mapped_col = row['匹配字段']
+                status_cls = "status-wait"
+                if file_cols:
+                    status_cls = "status-ok" if mapped_col in file_cols else "status-err"
+                
+                st.markdown(f'<div class="field-row">', unsafe_allow_html=True)
+                
+                # 左侧：Label + Desc
+                c_left, c_right = st.columns([5, 5])
+                with c_left:
+                    st.markdown(f"""
+                    <div style="display:flex; align-items:center;">
+                        <span class="status-dot {status_cls}"></span>
+                        <div>
+                            <div class="field-label">{row['目标字段']}</div>
+                            <div class="field-desc">{row['逻辑']}</div>
+                        </div>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                # 右侧：Editor / Display
+                with c_right:
+                    if is_edit:
+                        # 如果没有文件列，提供一个空的或当前值的列表
+                        opts = file_cols if file_cols else [mapped_col]
+                        # 容错：如果当前配置的值不在文件列中，加进去
+                        if mapped_col not in opts: opts = [mapped_col] + opts
+                        
+                        new_val = st.selectbox(
+                            "s", opts, 
+                            index=opts.index(mapped_col), 
+                            key=f"sel_{idx}", 
+                            label_visibility="collapsed"
+                        )
+                        st.session_state.mapping_config.at[idx, '匹配字段'] = new_val
+                    else:
+                        color = "#f85149" if status_cls == "status-err" else "#a5d6ff"
+                        st.markdown(f"<div style='text-align:right; font-family:monospace; color:{color};'>{mapped_col}</div>", unsafe_allow_html=True)
+                
+                st.markdown('</div>', unsafe_allow_html=True) # close field-row
+                
+        st.markdown("</div>", unsafe_allow_html=True) # close container
+
+    @staticmethod
     def render_error_report(err_df, on_fix):
         fixable = err_df[err_df['类型']=='数据错误']
         logic = err_df[err_df['类型']=='逻辑错误']
@@ -300,24 +355,15 @@ class UIComponents:
             if c2.button("🛠️ 在线修复", type="primary", use_container_width=True): on_fix()
 
     @staticmethod
-    def render_mapping_table(subset, is_edit, cols_a, cols_b):
-        st.markdown("""<div class="mapping-table"><div class="map-header-row"><div style="width:25%">目标字段</div><div style="width:35%">匹配列</div><div style="width:15%">源表</div><div style="width:25%">逻辑说明</div></div>""", unsafe_allow_html=True)
-        for idx, row in subset.iterrows():
-            st.markdown('<div class="map-data-row">', unsafe_allow_html=True)
-            c1, c2, c3, c4 = st.columns([2.5, 3.5, 1.5, 2.5])
-            c1.markdown(f"**{row['目标字段']}**")
-            with c2:
-                if is_edit:
-                    opts = cols_a if row['源表']=='Source A' else cols_b
-                    cur = row['匹配字段']
-                    if cur not in opts: opts = [cur] + opts
-                    new_val = st.selectbox("s", opts, index=opts.index(cur), key=f"s_{idx}", label_visibility="collapsed")
-                    st.session_state.mapping_config.at[idx, '匹配字段'] = new_val
-                else: st.markdown(f"<span style='color:#a5d6ff; font-family:monospace;'>{row['匹配字段']}</span>", unsafe_allow_html=True)
-            c3.markdown(f"<span class='source-tag'>{row['源表']}</span>", unsafe_allow_html=True)
-            c4.markdown(f"<span style='color:#666; font-size:0.8rem;'>{row['计算逻辑']}</span>", unsafe_allow_html=True)
-            st.markdown('</div>', unsafe_allow_html=True)
-        st.markdown("</div>", unsafe_allow_html=True)
+    def render_download_zone(result_files, result_zip):
+        with st.container(border=True):
+            st.success("✅ 生成完毕")
+            st.download_button("📦 批量下载 (ZIP)", result_zip, "report.zip", type="primary", use_container_width=True)
+            st.markdown("---")
+            c1, c2, c3 = st.columns(3)
+            if 't1' in result_files: c1.download_button("📥 表1: 工时统计", result_files['t1'], "t1.xlsx", use_container_width=True)
+            if 't2' in result_files: c2.download_button("📥 表2: 结算汇总", result_files['t2'], "t2.xlsx", use_container_width=True)
+            if 't3' in result_files: c3.download_button("📥 表3: 详细明细", result_files['t3'], "t3.xlsx", use_container_width=True)
 
 # ==============================================================================
 # Zone C: 控制层 (Controller)
@@ -370,15 +416,7 @@ if st.session_state.page == 'main':
 
     if has_files:
         if st.session_state.is_calculated:
-            with st.container(border=True):
-                st.success("✅ 生成完毕")
-                st.download_button("📦 批量下载 (ZIP)", st.session_state.result_zip, "report.zip", type="primary", use_container_width=True)
-                st.markdown("---")
-                c1, c2, c3 = st.columns(3)
-                fs = st.session_state.result_files
-                if 't1' in fs: c1.download_button("📥 表1: 工时统计", fs['t1'], "t1.xlsx", use_container_width=True)
-                if 't2' in fs: c2.download_button("📥 表2: 结算汇总", fs['t2'], "t2.xlsx", use_container_width=True)
-                if 't3' in fs: c3.download_button("📥 表3: 详细明细", fs['t3'], "t3.xlsx", use_container_width=True)
+            UIComponents.render_download_zone(st.session_state.result_files, st.session_state.result_zip)
         elif st.session_state.error_report is not None:
             def fix_action():
                 @st.dialog("🛠️ 在线修复", width="large")
@@ -455,7 +493,7 @@ if st.session_state.page == 'main':
                 st.rerun()
 
 elif st.session_state.page == 'mapping':
-    st.markdown("### 🐱 字段映射 & 逻辑配置")
+    st.markdown("### 🐱 字段映射控制台")
     c1, c2 = st.columns([1, 4])
     if c1.button("⬅️ 返回主页", use_container_width=True): 
         st.session_state.page = 'main'
@@ -466,11 +504,10 @@ elif st.session_state.page == 'mapping':
         with c_edit:
             has_files = st.session_state.data_store['A']['df'] is not None
             if not st.session_state.is_editing_mapping:
-                if st.button("✏️ 编辑配置", type="primary", use_container_width=True):
-                    if not has_files: st.toast("请先上传文件", icon="🚫")
-                    else:
-                        st.session_state.is_editing_mapping = True
-                        st.rerun()
+                if st.button("✏️ 开启配置", type="primary", use_container_width=True):
+                    if not has_files: st.toast("建议先在主页上传文件，以便自动获取列名", icon="⚠️")
+                    st.session_state.is_editing_mapping = True
+                    st.rerun()
             else:
                 if st.button("💾 保存生效", type="primary", use_container_width=True):
                     st.session_state.is_editing_mapping = False
@@ -480,14 +517,24 @@ elif st.session_state.page == 'mapping':
                     st.rerun()
     
     st.divider()
+    
+    # 准备列名
     cols_a = list(st.session_state.data_store['A']['df'].columns) if st.session_state.data_store['A']['df'] is not None else []
     cols_b = list(st.session_state.data_store['B']['df'].columns) if st.session_state.data_store['B']['df'] is not None else []
     
-    df_c = st.session_state.mapping_config
-    t1, t2 = st.tabs(["输入映射", "输出逻辑"])
+    # 左右分栏布局
+    c_left, c_right = st.columns(2)
     
-    with t1: 
-        UIComponents.render_mapping_table(df_c[df_c['所属表']=='输入映射'], st.session_state.is_editing_mapping, cols_a, cols_b)
-    with t2: 
-        # 输出逻辑为只读展示
-        UIComponents.render_mapping_table(df_c[df_c['所属表']=='输出逻辑'], False, [], [])
+    with c_left:
+        UIComponents.render_mapping_panel(
+            "Source A", "🏭 Source A: 投入明细 (工时流)", 
+            st.session_state.mapping_config, 
+            cols_a, st.session_state.is_editing_mapping
+        )
+        
+    with c_right:
+        UIComponents.render_mapping_panel(
+            "Source B", "💸 Source B: 差旅明细 (费用流)", 
+            st.session_state.mapping_config, 
+            cols_b, st.session_state.is_editing_mapping
+        )
