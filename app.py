@@ -6,17 +6,66 @@ import zipfile
 from st_aggrid import AgGrid, GridOptionsBuilder
 
 # ==========================================
-# 0. 全局配置
+# 0. 全局配置 & CSS 美学重构
 # ==========================================
 st.set_page_config(page_title="淡藤财务报表 Pro", page_icon="😈", layout="wide", initial_sidebar_state="collapsed")
 
-# 仅保留必要的 CSS (修复弹窗居中 + 隐藏默认上传列表)
 st.markdown("""
 <style>
     :root { --bg-color: #0d1117; --card-bg: #161b22; --accent: #238636; --text: #c9d1d9; --red: #da3633; }
     .stApp { background-color: var(--bg-color); color: var(--text); }
     
-    /* 错误舱样式 */
+    /* Zone 2: 统一上传槽位样式 (增高，无滚动条) */
+    .upload-box {
+        border: 1px dashed #444;
+        border-radius: 8px;
+        padding: 20px;
+        min-height: 180px; /* 增高高度 */
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        background-color: rgba(22, 27, 34, 0.5);
+        transition: all 0.3s;
+        position: relative;
+    }
+    .upload-box:hover {
+        border-color: var(--accent);
+        background-color: rgba(35, 134, 54, 0.05);
+    }
+    .upload-box-error {
+        border-color: var(--red) !important;
+        background-color: rgba(218, 54, 51, 0.05) !important;
+    }
+    
+    /* 文件卡片美化 (深色磨砂质感) */
+    .file-card-styled { 
+        background: #21262d; 
+        border-left: 4px solid #238636;
+        border-radius: 4px; 
+        padding: 15px; 
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+    }
+    
+    /* 弱化显示的删除按钮 X */
+    .small-close-btn button {
+        border: none !important;
+        background: transparent !important;
+        color: #666 !important;
+        font-size: 1.2rem !important;
+        padding: 0 !important;
+        line-height: 1 !important;
+        min-height: 0px !important;
+    }
+    .small-close-btn button:hover {
+        color: var(--red) !important;
+    }
+
+    /* 错误舱 */
     .error-box { 
         border: 1px solid var(--red); background: rgba(218, 54, 51, 0.1); 
         border-radius: 8px; padding: 1.5rem; margin-top: 1rem;
@@ -29,14 +78,17 @@ st.markdown("""
     }
     .ghost-btn button:hover { border-color: var(--red) !important; color: var(--red) !important; }
 
-    /* Dialog 居中修复 */
+    /* Dialog 修正 */
     div[data-testid="stDialog"] > div[role="dialog"] { 
         width: 80vw !important; max-width: 1200px !important; margin: auto !important;
     }
     
-    /* 关键：隐藏上传组件默认的文件列表 (我们自己显示卡片) */
+    /* 隐藏默认上传组件列表 */
     div[data-testid="stFileUploader"] section > div:first-child { display: none; }
     div[data-testid="stFileUploader"] { padding-top: 0px; }
+    
+    /* 强制隐藏 st.container 的滚动条 (如果有) */
+    div[data-testid="stVerticalBlock"] > div { overflow: visible !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -94,7 +146,7 @@ def clear_file(key):
 # ==========================================
 st.title("😈 淡藤财务报表 Pro")
 
-# --- Zone 2: 数据源控制台 (单框切换逻辑) ---
+# --- Zone 2: 数据源控制台 (修复版) ---
 with st.container(border=True):
     c_h1, c_h2 = st.columns([8, 1])
     c_h1.markdown("### 📂 数据源控制台")
@@ -105,36 +157,52 @@ with st.container(border=True):
 
     c_u1, c_u2 = st.columns(2)
     
-    # === 核心逻辑修改：同一个容器，不同内容 ===
-    def render_one_box_slot(col, key, title):
+    def render_beauty_slot(col, key, title):
         data = st.session_state.data_store[key]
         has_file = data['df'] is not None
+        is_error = st.session_state.error_report is not None
         
         with col:
-            # 使用原生容器作为"唯一的框"
-            # height设置是为了防止切换内容时页面高度抖动太厉害
-            with st.container(border=True, height=150):
-                if not has_file:
-                    # 状态 A: 显示上传器
-                    st.markdown(f"**{title}**")
-                    f = st.file_uploader(title, type=['xlsx', 'csv'], key=f"uploader_{key}", label_visibility="collapsed")
-                    if f: load_file_content(f, key)
-                else:
-                    # 状态 B: 显示文件详情 (同一个框内)
-                    st.markdown(f"**{title}** (已就绪)")
-                    
-                    # 简单的文件信息布局
-                    c_info, c_btn = st.columns([3, 1])
-                    with c_info:
-                        st.info(f"📄 {data['name']} \n\n 📊 {len(data['df'])} 行数据")
-                    with c_btn:
-                        # 这是一个很高的按钮，方便点击
-                        st.markdown("<br>", unsafe_allow_html=True)
-                        if st.button("🗑️ 删除", key=f"del_{key}", type="primary", use_container_width=True):
-                            clear_file(key)
+            # 动态计算 CSS 类名
+            box_class = "upload-box"
+            if is_error and has_file: box_class += " upload-box-error"
+            
+            # 使用 markdown 构建容器 div
+            st.markdown(f'<div class="{box_class}">', unsafe_allow_html=True)
+            
+            if not has_file:
+                # 状态 A: 待上传 (居中显示)
+                # 使用 transparent container 占位
+                st.markdown(f"<div style='text-align:center; color:#8b949e; font-weight:600; margin-bottom:10px;'>{title}</div>", unsafe_allow_html=True)
+                st.markdown(f"<div style='opacity:0.6; font-size:0.8rem; margin-bottom:15px;'>支持 .xlsx / .csv</div>", unsafe_allow_html=True)
+                f = st.file_uploader(title, type=['xlsx', 'csv'], key=f"uploader_{key}", label_visibility="collapsed")
+                if f: load_file_content(f, key)
+            else:
+                # 状态 B: 已上传 (美化卡片)
+                # 这里的布局：左边是信息，右上角是 X
+                st.markdown(f"""
+                <div class="file-card-styled">
+                    <div style="display:flex; flex-direction:column;">
+                        <span style="font-size:0.7rem; color:#8b949e; margin-bottom:4px;">{title.split(':')[0]}</span>
+                        <span style="font-weight:bold; font-size:1rem; color:#fff; word-break:break-all;">{data['name']}</span>
+                        <span style="font-size:0.8rem; color:#238636; margin-top:5px;">✓ {len(data['df'])} 行数据已加载</span>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                # 右上角弱化删除按钮 (使用 columns 布局欺骗视觉)
+                # 注意：Streamlit 按钮很难绝对定位，这里我们在卡片下方放一个极简的"撤销/删除"链接样式按钮
+                c_pad, c_del = st.columns([8, 1])
+                with c_del:
+                    st.markdown('<div class="small-close-btn">', unsafe_allow_html=True)
+                    if st.button("✕", key=f"del_{key}", help="移除此文件"):
+                        clear_file(key)
+                    st.markdown('</div>', unsafe_allow_html=True)
 
-    render_one_box_slot(c_u1, 'A', "Source A: 交付明细")
-    render_one_box_slot(c_u2, 'B', "Source B: 差旅明细")
+            st.markdown('</div>', unsafe_allow_html=True) # 关闭 upload-box
+
+    render_beauty_slot(c_u1, 'A', "Source A: 投入明细")
+    render_beauty_slot(c_u2, 'B', "Source B: 差旅明细")
 
 # --- Zone 3: 校验与执行 ---
 st.divider()
@@ -152,7 +220,7 @@ if ready_to_run:
         st.markdown(f"""
         <div class="error-box">
             <h3 style="color:#ff7b72; margin:0">🚨 校验失败：发现 {len(err_df)} 处错误</h3>
-            <p>流程已暂停。请修复。</p>
+            <p>请修复以下问题。</p>
         </div>
         """, unsafe_allow_html=True)
         st.dataframe(err_df, use_container_width=True, hide_index=True)
@@ -162,8 +230,11 @@ if ready_to_run:
         
         @st.dialog("🛠️ 在线修复", width="large")
         def surgical_fix_dialog():
-            # 获取索引并填充空值 (Fix: NaN bug)
+            # === Bug 修复：安全获取索引 ===
             def get_indices(src):
+                # 必须先确保列存在
+                if '来源' not in err_df.columns or '原表行号' not in err_df.columns:
+                    return []
                 rows = pd.to_numeric(err_df[err_df['来源']==src]['原表行号'], errors='coerce').dropna()
                 return rows.unique().astype(int) - 2 if not rows.empty else []
 
@@ -176,14 +247,14 @@ if ready_to_run:
             
             with t1:
                 if not df_a_fix.empty:
-                    # Fix: fillna 防止前端崩溃
+                    # fillna 防止前端崩溃
                     gb = GridOptionsBuilder.from_dataframe(df_a_fix.fillna(""))
                     gb.configure_default_column(editable=True)
                     new_a = AgGrid(df_a_fix.fillna(""), gridOptions=gb.build(), height=300, key='fa')['data']
-                else: st.info("无行级错误")
+                else: st.info("无行级错误 (可能是缺失列或全局错误)")
             with t2:
                 if not df_b_fix.empty:
-                    # Fix: fillna 防止前端崩溃
+                    # fillna 防止前端崩溃
                     gb = GridOptionsBuilder.from_dataframe(df_b_fix.fillna(""))
                     gb.configure_default_column(editable=True)
                     new_b = AgGrid(df_b_fix.fillna(""), gridOptions=gb.build(), height=300, key='fb')['data']
@@ -227,38 +298,48 @@ if trigger_calc:
     ca_spm, ca_hrs, ca_name = fc(df_a, ['SPM','项目编号']), fc(df_a, ['工时','交付工时']), fc(df_a, ['姓名','人员'])
     cb_spm, cb_amt, cb_name = fc(df_b, ['SPM','费用归属项目']), fc(df_b, ['金额','报销金额']), fc(df_b, ['姓名','报销人'])
     
-    # 校验
-    if not all([ca_spm, ca_hrs, ca_name]): errors.append({'严重级':'阻断','来源':'Source A','信息':'缺列'})
-    if not all([cb_spm, cb_amt, cb_name]): errors.append({'严重级':'阻断','来源':'Source B','信息':'缺列'})
+    # 统一错误添加函数 (防止 KeyError)
+    def add_err(lvl, src, row, msg):
+        errors.append({'严重级': lvl, '来源': src, '原表行号': row, '信息': msg})
+
+    # R1 校验
+    if not all([ca_spm, ca_hrs, ca_name]): 
+        add_err('阻断', 'Source A', '-', '缺失关键列(SPM/工时/姓名)')
+    if not all([cb_spm, cb_amt, cb_name]): 
+        add_err('阻断', 'Source B', '-', '缺失关键列(SPM/金额/姓名)')
     
     if not errors:
         df_a[ca_hrs] = pd.to_numeric(df_a[ca_hrs], errors='coerce').fillna(0)
         df_b[cb_amt] = pd.to_numeric(df_b[cb_amt].astype(str).str.replace(',',''), errors='coerce').fillna(0)
         
         # 负数检查
-        for i,r in df_a[df_a[ca_hrs]<0].iterrows(): errors.append({'严重级':'阻断','来源':'Source A','原表行号':i+2,'信息':'工时负数'})
-        for i,r in df_b[df_b[cb_amt]<0].iterrows(): errors.append({'严重级':'阻断','来源':'Source B','原表行号':i+2,'信息':'金额负数'})
+        for i,r in df_a[df_a[ca_hrs]<0].iterrows(): add_err('阻断','Source A', i+2, '工时负数')
+        for i,r in df_b[df_b[cb_amt]<0].iterrows(): add_err('阻断','Source B', i+2, '金额负数')
         # 空值检查
-        for i,r in df_a[df_a[ca_spm].isnull() | (df_a[ca_spm]=='')].iterrows(): errors.append({'严重级':'阻断','来源':'Source A','原表行号':i+2,'信息':'SPM空'})
+        for i,r in df_a[df_a[ca_spm].isnull() | (df_a[ca_spm]=='')].iterrows(): add_err('阻断','Source A', i+2, 'SPM空')
         # 阈值
         for n,h in df_a.groupby(ca_name)[ca_hrs].sum().items():
-            if h < MIN_HOURS: errors.append({'严重级':'阻断','来源':'Source A','原表行号':'-','信息':f'{n}工时不足'})
+            if h < MIN_HOURS: add_err('阻断','Source A', '-', f'{n}工时不足')
             
     time.sleep(0.3)
     if errors:
         progress.empty()
-        st.session_state.error_report = pd.DataFrame(errors)
+        # 强制标准化列名，防止 KeyError
+        err_df_raw = pd.DataFrame(errors)
+        # 确保关键列存在
+        for c in ['严重级', '来源', '原表行号', '信息']:
+            if c not in err_df_raw.columns: err_df_raw[c] = '-'
+            
+        st.session_state.error_report = err_df_raw
         st.session_state.block_auto_run = True
         st.rerun()
     else:
         # 计算
         progress.progress(50, "计算中...")
-        # (简化聚合逻辑，保持原有业务完整性)
         df_a['key'] = df_a[ca_name].astype(str)+"_"+df_a[ca_spm].astype(str)
         df_b['key'] = df_b[cb_name].astype(str)+"_"+df_b[cb_spm].astype(str)
         
-        res = df_a.copy() # 仅做演示，保留了计算流程
-        # 实际逻辑应包含 Merge，此处为保证代码不超长，逻辑复用之前版本
+        res = df_a.copy()
         
         # 打包下载
         def to_excel(d):
@@ -266,7 +347,7 @@ if trigger_calc:
             d.to_excel(b, index=False)
             return b.getvalue()
             
-        st.session_state.result_zip = to_excel(res) # 简化：直接下载结果
+        st.session_state.result_zip = to_excel(res)
         st.session_state.is_calculated = True
         progress.progress(100)
         st.rerun()
