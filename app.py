@@ -16,46 +16,57 @@ def inject_css():
         :root { --bg-color: #0d1117; --card-bg: #161b22; --accent: #238636; --text: #c9d1d9; --red: #da3633; --border: #30363d; }
         .stApp { background-color: var(--bg-color); color: var(--text); }
         
-        /* 通用组件样式 */
+        /* [UI] 卡片 */
         .file-card-styled { 
             background: #21262d; border-left: 4px solid #238636; border-radius: 4px; padding: 15px; 
             width: 100%; height: 100%; display: flex; align-items: center; justify-content: space-between; 
         }
+        /* [UI] 错误舱 */
         .error-box { border: 1px solid var(--red); background: rgba(218, 54, 51, 0.1); border-radius: 8px; padding: 1.5rem; margin-top: 1rem; }
         
-        /* 按钮修正 */
-        .ghost-btn button { border: 1px dashed #444 !important; color: #888 !important; background: transparent !important; }
+        /* [UI] 顶部导航 */
+        .nav-header { font-size: 1.2rem; font-weight: bold; margin-bottom: 20px; }
         
-        /* 顶部导航栏样式 */
-        .nav-container { padding-bottom: 10px; border-bottom: 1px solid #30363d; margin-bottom: 20px; }
-        
-        /* 表格整体容器 */
+        /* [UI] 表格容器 */
         .table-container {
             border: 1px solid #30363d;
             border-radius: 6px;
             background-color: #0d1117;
-            overflow: hidden; /* 圆角溢出隐藏 */
+            overflow: hidden;
+            margin-bottom: 20px;
         }
         
-        /* 表头样式 (通过 st.columns 渲染，配合 CSS 增强) */
-        div[data-testid="column"] > div > div.header-cell {
+        /* [UI] 表头单元格 - 增加右边框和居中 */
+        div.header-cell {
             background-color: #161b22;
             color: #c9d1d9;
             font-weight: bold;
-            padding: 15px 10px;
+            padding: 15px 5px;
             border-bottom: 2px solid #30363d;
+            border-right: 1px solid #30363d; /* 垂直分割线 */
             height: 100%;
-            display: flex; align-items: center;
+            display: flex; 
+            align-items: center; 
+            justify-content: center; /* 水平居中 */
+            text-align: center;
         }
         
-        /* 内容行样式 */
+        /* [UI] 内容行单元格 - 增加右边框和居中 */
         div.row-cell {
-            padding: 12px 10px;
+            padding: 12px 5px;
             border-bottom: 1px solid #21262d;
+            border-right: 1px solid #21262d; /* 垂直分割线 */
             height: 100%;
-            display: flex; align-items: center;
+            display: flex; 
+            align-items: center; 
+            justify-content: center; /* 水平居中 */
+            text-align: center;
             font-size: 0.9rem;
+            width: 100%;
         }
+        
+        /* 去掉最后一列的右边框 */
+        .no-border-right { border-right: none !important; }
         
         /* 标签 */
         .source-tag { 
@@ -80,7 +91,7 @@ def inject_css():
         div[data-testid="stFileUploader"] section > div:first-child { display: none; }
         div[data-testid="stFileUploader"] { padding-top: 15px; }
         div[data-testid="stSelectbox"] { margin-bottom: 0px; }
-        div[data-testid="stSelectbox"] > div > div { min-height: 32px; border-color: #30363d; background-color: #0d1117; }
+        div[data-testid="stSelectbox"] > div > div { min-height: 32px; border-color: #30363d; background-color: #0d1117; justify-content: center; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -314,39 +325,37 @@ class UIComponents:
 
     @staticmethod
     def render_tab_content(description, subset, is_edit, cols_a, cols_b):
-        """渲染映射表内容 (Table Style)"""
+        """渲染映射表内容 (Strict Aligned Table)"""
         # 4. 用途说明
         st.markdown(f'<div class="info-bar">ℹ️ {description}</div>', unsafe_allow_html=True)
         
-        # 表格容器开始
+        # 表格容器
         st.markdown('<div class="table-container">', unsafe_allow_html=True)
         
-        # 表头 (Strictly Aligned)
+        # 表头 (2.5 - 3.5 - 1.5 - 2.5)
         c1, c2, c3, c4 = st.columns([2.5, 3.5, 1.5, 2.5])
         with c1: st.markdown('<div class="header-cell">目标字段</div>', unsafe_allow_html=True)
         with c2: st.markdown('<div class="header-cell">匹配字段</div>', unsafe_allow_html=True)
         with c3: st.markdown('<div class="header-cell">源表</div>', unsafe_allow_html=True)
-        with c4: st.markdown('<div class="header-cell">逻辑说明</div>', unsafe_allow_html=True)
+        with c4: st.markdown('<div class="header-cell no-border-right">逻辑说明</div>', unsafe_allow_html=True)
         
         # 表内容
         for idx, row in subset.iterrows():
             is_result_source = row['源表'] == '结果表3'
             
-            # 使用 container 模拟行边框
-            # 技巧：Streamlit container 无法直接设置 style，所以我们用 markdown + columns 组合
-            # 为了确保对齐，这里必须非常小心
-            
+            # 使用 container 模拟行容器，保持列宽一致
             c1, c2, c3, c4 = st.columns([2.5, 3.5, 1.5, 2.5])
             
             with c1:
                 st.markdown(f'<div class="row-cell" style="font-weight:bold;">{row["目标字段"]}</div>', unsafe_allow_html=True)
             
             with c2:
-                if is_edit and not is_result_source:
+                # 核心交互逻辑
+                if st.session_state.is_editing_mapping and not is_result_source:
                     opts = cols_a if row['源表']=='Source A' else cols_b
                     cur = row['匹配字段']
                     if cur not in opts: opts = [cur] + opts
-                    # 这里的 selectbox 会自动占据高度，我们通过 CSS 修正了它的 padding
+                    # 此时不包 row-cell div，让 selectbox 填满，CSS 已处理高度
                     new_val = st.selectbox("s", opts, index=opts.index(cur), key=f"s_{idx}", label_visibility="collapsed")
                     st.session_state.mapping_config.at[idx, '匹配字段'] = new_val
                 else:
@@ -358,7 +367,7 @@ class UIComponents:
                 st.markdown(f'<div class="row-cell"><span class="source-tag {tag_cls}">{row["源表"]}</span></div>', unsafe_allow_html=True)
             
             with c4:
-                st.markdown(f'<div class="row-cell" style="color:#888;">{row["计算逻辑"]}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="row-cell no-border-right" style="color:#888;">{row["计算逻辑"]}</div>', unsafe_allow_html=True)
                 
         st.markdown('</div>', unsafe_allow_html=True) # End table-container
 
@@ -490,17 +499,17 @@ if st.session_state.page == 'main':
                 st.rerun()
 
 elif st.session_state.page == 'mapping':
-    # 1. 顶部导航 (Row 1)
-    c1, c2 = st.columns([1, 4])
-    c1.markdown("### 🐱 字段映射")
-    if c2.button("⬅️ 返回主页", use_container_width=True): 
+    # 1. 顶部导航 (Title + Return)
+    c1, c2 = st.columns([9, 1])
+    c1.markdown("<div class='nav-header'>🐱 字段映射 & 逻辑配置</div>", unsafe_allow_html=True)
+    if c2.button("⬅️ 返回", use_container_width=True): 
         st.session_state.page = 'main'
         st.rerun()
     
-    st.divider()
+    st.markdown("<hr style='margin-top:0; border-color:#30363d;'>", unsafe_allow_html=True)
 
-    # 2. 模块标题 + 配置按钮 (Row 2)
-    c_title, c_action = st.columns([8, 2])
+    # 2. 模块标题 + 配置按钮
+    c_title, c_spacer, c_action = st.columns([7, 1, 2])
     c_title.markdown("#### 🧬 数据血缘与逻辑配置")
     
     has_files = st.session_state.data_store['A']['df'] is not None and st.session_state.data_store['B']['df'] is not None
@@ -520,15 +529,14 @@ elif st.session_state.page == 'mapping':
                 st.session_state.error_report = None
                 st.rerun()
 
-    # 3. 结果表切换 (Row 3)
+    # 3. 结果表切换
     df_c = st.session_state.mapping_config
     t1, t2, t3 = st.tabs(["结果表3 (底表)", "结果表2 (结算)", "结果表1 (工时)"])
     
-    # 准备列名 (仅当编辑模式且有文件时)
     cols_a = list(st.session_state.data_store['A']['df'].columns) if has_files else []
     cols_b = list(st.session_state.data_store['B']['df'].columns) if has_files else []
 
-    # 4. 内容渲染 (Row 4)
+    # 4. 内容渲染
     with t1:
         UIComponents.render_tab_content(
             "全量明细底表：基于 Source A/B 进行清洗、聚合、关联计算后的宽表。",
