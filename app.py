@@ -12,7 +12,7 @@ st.set_page_config(page_title="淡藤财务报表 Pro", page_icon="😈", layout
 
 st.markdown("""
 <style>
-    :root { --bg-color: #0d1117; --card-bg: #161b22; --accent: #238636; --text: #c9d1d9; --red: #da3633; }
+    :root { --bg-color: #0d1117; --card-bg: #161b22; --accent: #238636; --text: #c9d1d9; --red: #da3633; --border: #30363d; }
     .stApp { background-color: var(--bg-color); color: var(--text); }
     
     /* 上传容器 */
@@ -32,19 +32,32 @@ st.markdown("""
 
     /* 侧边栏猫猫按钮 */
     .cat-btn button {
-        margin-top: 2rem; border: 1px solid #30363d !important; background: #161b22 !important; color: #c9d1d9 !important;
-        border-radius: 8px !important; padding: 0.5rem 1rem !important; width: 100%; text-align: center;
+        border: 1px solid #30363d !important; background: #161b22 !important; color: #c9d1d9 !important;
+        border-radius: 6px !important; padding: 0.5rem 1rem !important; width: 100%; text-align: center; margin-top: 10px;
     }
-    .cat-btn button:hover { border-color: #a371f7 !important; color: #a371f7 !important; transform: scale(1.02); }
+    .cat-btn button:hover { border-color: #a371f7 !important; color: #a371f7 !important; }
 
-    /* 映射页样式 */
-    .map-row { background: #1c2128; padding: 10px; border-radius: 6px; margin-bottom: 8px; border: 1px solid #30363d; display: flex; align-items: center; }
-    .map-label { color: #8b949e; font-size: 0.85rem; width: 100px; }
-    .map-val { font-weight: bold; color: #c9d1d9; }
+    /* 映射表样式重构 */
+    .map-header {
+        background-color: #21262d; color: #8b949e; font-weight: bold; font-size: 0.9rem;
+        padding: 10px 5px; border-bottom: 2px solid #30363d; margin-bottom: 5px;
+    }
+    .map-row {
+        padding: 8px 5px; border-bottom: 1px solid #21262d; display: flex; align-items: center;
+        transition: background 0.2s;
+    }
+    .map-row:hover { background-color: rgba(255,255,255,0.02); }
+    .source-tag {
+        background: #10151b; border: 1px solid #30363d; border-radius: 4px; 
+        padding: 2px 6px; font-size: 0.75rem; color: #8b949e;
+    }
     
     /* 隐藏默认上传组件 */
     div[data-testid="stFileUploader"] section > div:first-child { display: none; }
     div[data-testid="stFileUploader"] { padding-top: 15px; }
+    
+    /* 调整 selectbox 在表格中的紧凑度 */
+    div[data-testid="stSelectbox"] > div > div { min-height: 38px; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -61,15 +74,15 @@ if 'is_calculated' not in st.session_state: st.session_state.is_calculated = Fal
 if 'result_zip' not in st.session_state: st.session_state.result_zip = None
 if 'error_report' not in st.session_state: st.session_state.error_report = None
 if 'block_auto_run' not in st.session_state: st.session_state.block_auto_run = False
-if 'is_editing_mapping' not in st.session_state: st.session_state.is_editing_mapping = False # 编辑模式锁
+if 'is_editing_mapping' not in st.session_state: st.session_state.is_editing_mapping = False
 
-# === 核心：初始化字段映射配置 (带所属表标记) ===
+# === 初始化配置 ===
 def init_mapping_config():
     if 'mapping_config' not in st.session_state:
-        # 模板数据 (默认只读)
+        # 模板数据
         data = [
             # --- 表1: 工时统计 ---
-            {"所属表": "表1", "目标字段": "人员", "来源": "Source A", "匹配字段": "姓名", "计算逻辑": "主键"},
+            {"所属表": "表1", "目标字段": "人员", "来源": "Source A", "匹配字段": "姓名", "计算逻辑": "主键 (分组依据)"},
             {"所属表": "表1", "目标字段": "项目工时", "来源": "Source A", "匹配字段": "交付工时", "计算逻辑": "SUM聚合"},
             
             # --- 表2: 结算汇总 ---
@@ -129,10 +142,8 @@ def clear_file(key):
     st.session_state.block_auto_run = False
     st.rerun()
 
-# --- 核心：从配置中动态获取列名 (单一值) ---
 def get_config_key(source_name, target_field):
     df_conf = st.session_state.mapping_config
-    # 模糊查找目标字段 (防止表1/表2重复字段名干扰，优先匹配所属表，这里简化为全表搜)
     row = df_conf[(df_conf['来源'] == source_name) & (df_conf['目标字段'] == target_field)]
     if row.empty: return None
     return str(row.iloc[0]['匹配字段']).strip()
@@ -149,7 +160,8 @@ def render_main_page():
         MIN_HOURS = st.number_input("工时阈值 (小时)", value=100)
         SUBSIDY_TAG = st.text_input("补助关键词", "差旅补助")
         
-        st.markdown("<br>"*5, unsafe_allow_html=True)
+        # 修正：使用分割线代替过多换行，确保按钮位置合理
+        st.markdown("---") 
         st.markdown('<div class="cat-btn">', unsafe_allow_html=True)
         if st.button("🐱 字段映射配置", help="自定义匹配规则"):
             switch_page('mapping')
@@ -285,19 +297,13 @@ def render_main_page():
         df_b = st.session_state.data_store['B']['df']
         errors = []
 
-        # === 核心：从配置表读取单个匹配列 ===
-        # 如果用户配置了多个(旧逻辑), 这里需要确保V7逻辑下我们只取一个
-        # 在 V7 逻辑中，get_config_key 返回的是单一字符串
-        
         ca_spm = get_config_key('Source A', 'SPM')
         ca_hrs = get_config_key('Source A', '工时')
         ca_name = get_config_key('Source A', '姓名')
-        
         cb_spm = get_config_key('Source B', 'SPM (B)')
         cb_amt = get_config_key('Source B', '金额')
         cb_name = get_config_key('Source B', '姓名 (B)')
 
-        # 维度字段
         ca_proj = get_config_key('Source A', '项目名称') or df_a.columns[0]
         ca_range = get_config_key('Source A', '人事范围') or df_a.columns[0]
         ca_contract = get_config_key('Source A', '合同主体') or df_a.columns[0]
@@ -307,35 +313,26 @@ def render_main_page():
         def add_err(etype, src, rid, msg):
             errors.append({'类型': etype, '来源': src, '_sys_id': rid, '行号': rid if isinstance(rid, int) else '-', '信息': msg})
 
-        # 1. 缺列检查
         def check_col(df, col, src, target_name):
             if col not in df.columns:
-                add_err('逻辑错误', src, '-', f'未找到列[{col}] (对应目标:{target_name})。请去配置页检查。')
+                add_err('逻辑错误', src, '-', f'未找到列[{col}] (目标:{target_name})。请去配置页检查。')
                 return False
             return True
 
-        if check_col(df_a, ca_spm, 'Source A', 'SPM') and \
-           check_col(df_a, ca_hrs, 'Source A', '工时') and \
-           check_col(df_a, ca_name, 'Source A', '姓名'):
-           pass
-        
-        if check_col(df_b, cb_spm, 'Source B', 'SPM') and \
-           check_col(df_b, cb_amt, 'Source B', '金额') and \
-           check_col(df_b, cb_name, 'Source B', '姓名'):
-           pass
+        # 校验A
+        if check_col(df_a, ca_spm, 'Source A', 'SPM') and check_col(df_a, ca_hrs, 'Source A', '工时') and check_col(df_a, ca_name, 'Source A', '姓名'): pass
+        # 校验B
+        if check_col(df_b, cb_spm, 'Source B', 'SPM') and check_col(df_b, cb_amt, 'Source B', '金额') and check_col(df_b, cb_name, 'Source B', '姓名'): pass
 
         if not errors:
-            # 预处理
             df_a[ca_hrs] = pd.to_numeric(df_a[ca_hrs], errors='coerce').fillna(0)
             if df_b[cb_amt].dtype == object: df_b[cb_amt] = df_b[cb_amt].astype(str).str.replace(',', '')
             df_b[cb_amt] = pd.to_numeric(df_b[cb_amt], errors='coerce').fillna(0)
 
-            # 2. 数据错误
             for i,r in df_a[df_a[ca_hrs]<0].iterrows(): add_err('数据错误','Source A', r['_sys_id'], '工时为负')
             for i,r in df_b[df_b[cb_amt]<0].iterrows(): add_err('数据错误','Source B', r['_sys_id'], '金额为负')
             for i,r in df_a[df_a[ca_spm].isnull() | (df_a[ca_spm]=='')].iterrows(): add_err('数据错误','Source A', r['_sys_id'], 'SPM为空')
 
-            # 3. 逻辑错误
             agg = df_a.groupby(ca_name)[ca_hrs].sum()
             for n,h in agg.items():
                 if h < MIN_HOURS: add_err('逻辑错误','Source A', '-', f'人员[{n}]总工时({h}) < 阈值')
@@ -433,11 +430,10 @@ def render_mapping_page():
     with col1:
         if st.button("⬅️ 返回主页", use_container_width=True): switch_page('main')
     
-    # 状态栏: 编辑模式切换
+    # 编辑模式切换
     with col2:
         c_status, c_edit = st.columns([3, 1])
         with c_edit:
-            # 只有当文件都上传了，才允许进入编辑模式
             has_files = st.session_state.data_store['A']['df'] is not None and st.session_state.data_store['B']['df'] is not None
             
             if not st.session_state.is_editing_mapping:
@@ -450,7 +446,7 @@ def render_mapping_page():
             else:
                 if st.button("💾 保存生效", type="primary", use_container_width=True):
                     st.session_state.is_editing_mapping = False
-                    st.session_state.is_calculated = False # 强制重算
+                    st.session_state.is_calculated = False 
                     st.session_state.block_auto_run = False
                     st.session_state.error_report = None
                     st.success("配置已更新！")
@@ -459,61 +455,62 @@ def render_mapping_page():
 
     st.divider()
     
-    # 获取真实列名作为下拉选项
+    # 获取真实列名
     cols_a = list(st.session_state.data_store['A']['df'].columns) if st.session_state.data_store['A']['df'] is not None else []
     cols_b = list(st.session_state.data_store['B']['df'].columns) if st.session_state.data_store['B']['df'] is not None else []
 
     df_conf = st.session_state.mapping_config
     
-    # 分 Tab 展示
     tab1, tab2, tab3 = st.tabs(["表1: 工时统计", "表2: 结算汇总", "表3: 详细明细"])
     
-    # 渲染器
     def render_table_config(table_name):
         subset = df_conf[df_conf['所属表'] == table_name]
         
+        # 1. 渲染表头
+        c1, c2, c3, c4 = st.columns([2, 3, 1.5, 3])
+        c1.markdown("<div class='map-header'>目标字段</div>", unsafe_allow_html=True)
+        c2.markdown("<div class='map-header'>匹配列 (可编辑)</div>", unsafe_allow_html=True)
+        c3.markdown("<div class='map-header'>来源表</div>", unsafe_allow_html=True)
+        c4.markdown("<div class='map-header'>逻辑说明</div>", unsafe_allow_html=True)
+        
+        # 2. 渲染行
         for idx, row in subset.iterrows():
-            # 获取当前行的索引，用于更新
             real_idx = idx
             
-            if not st.session_state.is_editing_mapping:
-                # 只读模式
-                st.markdown(f"""
-                <div class="map-row">
-                    <div class="map-label">{row['目标字段']}</div>
-                    <div style="flex:1; font-family:monospace; color:#a5d6ff;">{row['匹配字段']}</div>
-                    <div style="font-size:0.8rem; color:#666; width:100px;">{row['来源']}</div>
-                    <div style="font-size:0.8rem; color:#238636; width:150px;">{row['计算逻辑']}</div>
-                </div>
-                """, unsafe_allow_html=True)
-            else:
-                # 编辑模式
-                c1, c2, c3, c4 = st.columns([2, 3, 2, 2])
-                c1.markdown(f"**{row['目标字段']}**")
-                
-                # 下拉菜单：根据来源动态选择列名列表
-                options = cols_a if row['来源'] == 'Source A' else cols_b
-                current_val = row['匹配字段']
-                
-                # 防止当前值不在选项中导致报错 (容错)
-                index_val = 0
-                if current_val in options:
+            # 使用 container 或 columns 来布局每一行
+            # 这里我们使用 st.columns 来保持严格对齐
+            r1, r2, r3, r4 = st.columns([2, 3, 1.5, 3])
+            
+            with r1:
+                st.markdown(f"<div style='padding-top:10px; font-weight:bold;'>{row['目标字段']}</div>", unsafe_allow_html=True)
+            
+            with r2:
+                if st.session_state.is_editing_mapping:
+                    options = cols_a if row['来源'] == 'Source A' else cols_b
+                    current_val = row['匹配字段']
+                    # 容错：如果当前值不在选项中，插入到选项第一个，防止报错
+                    if current_val not in options:
+                        options = [current_val] + options
                     index_val = options.index(current_val)
-                
-                new_val = c2.selectbox(
-                    "匹配列", 
-                    options=options, 
-                    index=index_val, 
-                    key=f"sel_{real_idx}", 
-                    label_visibility="collapsed"
-                )
-                
-                # 实时更新 session state
-                st.session_state.mapping_config.at[real_idx, '匹配字段'] = new_val
-                
-                c3.caption(f"来源: {row['来源']}")
-                c4.caption(f"逻辑: {row['计算逻辑']}")
-                st.divider()
+                    
+                    new_val = st.selectbox(
+                        "sel", 
+                        options=options, 
+                        index=index_val, 
+                        key=f"sel_{real_idx}", 
+                        label_visibility="collapsed"
+                    )
+                    st.session_state.mapping_config.at[real_idx, '匹配字段'] = new_val
+                else:
+                     st.markdown(f"<div style='padding-top:10px; color:#a5d6ff; font-family:monospace;'>{row['匹配字段']}</div>", unsafe_allow_html=True)
+            
+            with r3:
+                st.markdown(f"<div style='padding-top:10px;'><span class='source-tag'>{row['来源']}</span></div>", unsafe_allow_html=True)
+            
+            with r4:
+                st.markdown(f"<div style='padding-top:10px; font-size:0.85rem; color:#888;'>{row['计算逻辑']}</div>", unsafe_allow_html=True)
+            
+            st.markdown("<div style='border-bottom: 1px solid #21262d; margin-bottom: 5px;'></div>", unsafe_allow_html=True)
 
     with tab1: render_table_config("表1")
     with tab2: render_table_config("表2")
