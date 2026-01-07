@@ -45,199 +45,206 @@ def inject_css():
 class DataEngine:
     @staticmethod
     def get_default_config():
-        """定义字段映射默认配置 - 基于用户提供的真实文件列名优化"""
+        """
+        定义字段映射默认配置
+        严格依据用户提供的 Excel 文件表头
+        """
         return pd.DataFrame([
-            # --- 表A (工时) ---
-            {"所属表": "表3", "目标字段": "人员", "来源": "Source A", "匹配字段": "人员", "计算逻辑": "主键 (Join Key)"},
-            {"所属表": "表3", "目标字段": "SPM", "来源": "Source A", "匹配字段": "SPM", "计算逻辑": "主键 (Join Key)"},
-            {"所属表": "表3", "目标字段": "工时", "来源": "Source A", "匹配字段": "交付工时", "计算逻辑": "SUM聚合 (清洗: 去逗号转数字)"},
-            # 维度
-            {"所属表": "表3", "目标字段": "所属项目", "来源": "Source A", "匹配字段": "所属项目", "计算逻辑": "维度 (First)"},
-            {"所属表": "表3", "目标字段": "人事范围", "来源": "Source A", "匹配字段": "人事范围", "计算逻辑": "维度 (对应销售公司)"},
-            {"所属表": "表3", "目标字段": "合同主体", "来源": "Source A", "匹配字段": "合同主体", "计算逻辑": "维度 (对应采购公司)"},
-            {"所属表": "表3", "目标字段": "销售人员", "来源": "Source A", "匹配字段": "销售", "计算逻辑": "维度 (First)"},
-            {"所属表": "表3", "目标字段": "销售部门", "来源": "Source A", "匹配字段": "销售部门", "计算逻辑": "维度 (对应采购部门)"},
+            # --- 输入映射：Source A (工时表) ---
+            {"所属表": "输入映射", "目标字段": "人员", "源表": "Source A", "匹配字段": "人员", "计算逻辑": "主键 (Join Key)"},
+            {"所属表": "输入映射", "目标字段": "SPM", "源表": "Source A", "匹配字段": "SPM", "计算逻辑": "主键 (Join Key)"},
+            {"所属表": "输入映射", "目标字段": "耗时(小时)", "源表": "Source A", "匹配字段": "交付工时", "计算逻辑": "数值源 (SUM聚合)"},
+            {"所属表": "输入映射", "目标字段": "所属项目", "源表": "Source A", "匹配字段": "所属项目", "计算逻辑": "维度 (First)"},
+            {"所属表": "输入映射", "目标字段": "人事范围", "源表": "Source A", "匹配字段": "人事范围", "计算逻辑": "维度 (对应销售公司)"},
+            {"所属表": "输入映射", "目标字段": "合同主体", "源表": "Source A", "匹配字段": "合同主体", "计算逻辑": "维度 (对应采购公司)"},
+            {"所属表": "输入映射", "目标字段": "销售人员", "源表": "Source A", "匹配字段": "销售", "计算逻辑": "维度 (First)"},
+            {"所属表": "输入映射", "目标字段": "销售部门", "源表": "Source A", "匹配字段": "销售部门", "计算逻辑": "维度 (对应采购部门)"},
             
-            # --- 表B (费用) ---
-            # 注意：根据用户注释，表2的人员字段叫“出差人”
-            {"所属表": "表3", "目标字段": "人员 (B)", "来源": "Source B", "匹配字段": "出差人", "计算逻辑": "外键 (Join Key)"},
-            {"所属表": "表3", "目标字段": "SPM (B)", "来源": "Source B", "匹配字段": "SPM", "计算逻辑": "外键 (Join Key)"},
-            {"所属表": "表3", "目标字段": "金额", "来源": "Source B", "匹配字段": "金额", "计算逻辑": "SUM聚合 (清洗: 去逗号转数字)"},
-            {"所属表": "表3", "目标字段": "费用类型", "来源": "Source B", "匹配字段": "产品类型", "计算逻辑": "分类依据 (含关键词则为补助)"},
+            # --- 输入映射：Source B (费用表) ---
+            {"所属表": "输入映射", "目标字段": "人员 (B)", "源表": "Source B", "匹配字段": "出差人", "计算逻辑": "外键 (Join Key)"},
+            {"所属表": "输入映射", "目标字段": "SPM (B)", "源表": "Source B", "匹配字段": "SPM", "计算逻辑": "外键 (Join Key)"},
+            {"所属表": "输入映射", "目标字段": "金额", "源表": "Source B", "匹配字段": "金额", "计算逻辑": "数值源 (SUM聚合)"},
+            {"所属表": "输入映射", "目标字段": "费用类型", "源表": "Source B", "匹配字段": "产品类型", "计算逻辑": "分类依据 (区分补助/费控)"},
+
+            # --- 输出逻辑展示 (仅展示，代码中逻辑已固化) ---
+            {"所属表": "输出逻辑", "目标字段": "结果表3 (底表)", "源表": "A + B", "匹配字段": "Left Join", "计算逻辑": "全量明细计算"},
+            {"所属表": "输出逻辑", "目标字段": "结果表2 (结算)", "源表": "结果表3", "匹配字段": "按公司/部门聚合", "计算逻辑": "SUM(金额), SUM(人天)"},
+            {"所属表": "输出逻辑", "目标字段": "结果表1 (工时)", "源表": "结果表3", "匹配字段": "按人员聚合", "计算逻辑": "SUM(耗时)"},
         ])
 
     @staticmethod
-    def get_col(config_df, target):
+    def get_col(config_df, target, source_table):
         """根据目标字段名获取用户配置的源列名"""
-        row = config_df[config_df['目标字段'] == target]
+        row = config_df[(config_df['目标字段'] == target) & (config_df['源表'] == source_table)]
         if row.empty: return None
         return str(row.iloc[0]['匹配字段']).strip()
 
     @staticmethod
     def clean_num(df, col):
-        """清洗数字列: 转字符串 -> 去逗号 -> 转数字 -> 填0"""
+        """清洗数字列"""
         if col not in df.columns: return 0
         return pd.to_numeric(df[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
 
     @staticmethod
     def validate(df_a, df_b, config_df, min_hours):
-        """
-        校验逻辑:
-        1. 检查所有配置的列是否存在
-        2. 检查工时/金额是否为负
-        3. 检查SPM是否为空
-        4. 检查工时阈值
-        5. 检查孤立费用 (B表有费用但A表没工时)
-        """
+        """校验逻辑：基于配置的列名进行检查"""
         errors = []
-        c = lambda t: DataEngine.get_col(config_df, t)
+        # 快捷获取列名函数
+        c = lambda t, s: DataEngine.get_col(config_df, t, s)
         
-        # 1. 映射字典
-        map_a = {k: c(k) for k in ['人员','SPM','工时','所属项目','人事范围','合同主体','销售人员','销售部门']}
-        map_b = {k: c(k) for k in ['人员 (B)','SPM (B)','金额','费用类型']}
+        # 1. 获取当前配置的列名
+        map_a = {
+            '人员': c('人员', 'Source A'), 'SPM': c('SPM', 'Source A'), '耗时': c('耗时(小时)', 'Source A'),
+            '项目': c('所属项目', 'Source A'), '范围': c('人事范围', 'Source A'), '合同': c('合同主体', 'Source A'),
+            '销售': c('销售人员', 'Source A'), '部门': c('销售部门', 'Source A')
+        }
+        map_b = {
+            '人员': c('人员 (B)', 'Source B'), 'SPM': c('SPM (B)', 'Source B'),
+            '金额': c('金额', 'Source B'), '类型': c('费用类型', 'Source B')
+        }
         
-        # 2. 列存在性检查
-        for target, col in map_a.items():
-            if col and col not in df_a.columns:
-                errors.append({'类型':'逻辑错误', '来源':'Source A', '_sys_id':'-', '行号':'-', '信息':f'缺列: {col} (目标:{target})'})
-        for target, col in map_b.items():
-            if col and col not in df_b.columns:
-                errors.append({'类型':'逻辑错误', '来源':'Source B', '_sys_id':'-', '行号':'-', '信息':f'缺列: {col} (目标:{target})'})
-        
-        if errors: return errors, df_a, df_b # 缺列直接阻断
+        # 2. 存在性检查 (Logic Error)
+        def check_exist(df, col, src, target):
+            if col and col not in df.columns:
+                errors.append({'类型':'逻辑错误', '来源':src, '_sys_id':'-', '行号':'-', '信息':f'缺列: {col} (目标:{target})'})
+                return False
+            return True
 
-        # 3. 数据清洗 (临时清洗用于校验)
+        valid_a = all([check_exist(df_a, col, 'Source A', t) for t, col in map_a.items() if col])
+        valid_b = all([check_exist(df_b, col, 'Source B', t) for t, col in map_b.items() if col])
+        
+        if not (valid_a and valid_b): return errors, df_a, df_b # 阻断
+
+        # 3. 数值清洗 (临时)
         df_a_clean = df_a.copy()
         df_b_clean = df_b.copy()
-        df_a_clean[map_a['工时']] = DataEngine.clean_num(df_a_clean, map_a['工时'])
+        df_a_clean[map_a['耗时']] = DataEngine.clean_num(df_a_clean, map_a['耗时'])
         df_b_clean[map_b['金额']] = DataEngine.clean_num(df_b_clean, map_b['金额'])
 
-        # 4. 数据错误校验
-        # 负数检查
-        for i, r in df_a_clean[df_a_clean[map_a['工时']] < 0].iterrows():
+        # 4. 数据错误 (负数/空值)
+        # A表
+        for i, r in df_a_clean[df_a_clean[map_a['耗时']] < 0].iterrows():
             errors.append({'类型':'数据错误', '来源':'Source A', '_sys_id':r['_sys_id'], '行号':r['_sys_id'], '信息':'工时为负'})
-        for i, r in df_b_clean[df_b_clean[map_b['金额']] < 0].iterrows():
-            errors.append({'类型':'数据错误', '来源':'Source B', '_sys_id':r['_sys_id'], '行号':r['_sys_id'], '信息':'金额为负'})
-        # 空值检查
         for i, r in df_a[df_a[map_a['SPM']].isnull() | (df_a[map_a['SPM']] == '')].iterrows():
              errors.append({'类型':'数据错误', '来源':'Source A', '_sys_id':r['_sys_id'], '行号':r['_sys_id'], '信息':'SPM为空'})
+        # B表
+        for i, r in df_b_clean[df_b_clean[map_b['金额']] < 0].iterrows():
+            errors.append({'类型':'数据错误', '来源':'Source B', '_sys_id':r['_sys_id'], '行号':r['_sys_id'], '信息':'金额为负'})
 
-        # 5. 业务逻辑校验
+        # 5. 业务逻辑 (阈值 & 孤立费用)
         # 阈值
-        agg = df_a_clean.groupby(map_a['人员'])[map_a['工时']].sum()
+        agg = df_a_clean.groupby(map_a['人员'])[map_a['耗时']].sum()
         for n, h in agg.items():
             if h < min_hours:
                  errors.append({'类型':'逻辑错误', '来源':'Source A', '_sys_id':'-', '行号':'-', '信息':f'人员[{n}]总工时({h}) < 阈值'})
         
-        # 孤立费用 (Match Key: 人员+SPM)
+        # 孤立费用 (Match Key)
         df_a['key'] = df_a[map_a['人员']].astype(str) + "_" + df_a[map_a['SPM']].astype(str)
-        df_b['key'] = df_b[map_b['人员 (B)']].astype(str) + "_" + df_b[map_b['SPM (B)']].astype(str)
+        df_b['key'] = df_b[map_b['人员']].astype(str) + "_" + df_b[map_b['SPM']].astype(str)
         
         orphans = df_b[~df_b['key'].isin(df_a['key'])]
-        # 去重报错，防止同一笔孤立费用报多次
         for key in orphans['key'].unique():
-             errors.append({'类型':'逻辑错误', '来源':'Source B', '_sys_id':'-', '行号':'-', '信息':f'发现孤立费用，无法匹配到交付人员: {key}'})
+             errors.append({'类型':'逻辑错误', '来源':'Source B', '_sys_id':'-', '行号':'-', '信息':f'孤立费用，无对应工时: {key}'})
 
         return errors, df_a, df_b
 
     @staticmethod
     def calculate(df_a, df_b, config_df, price_per_day, subsidy_tag):
-        """
-        核心计算逻辑:
-        1. 清洗数据
-        2. A表聚合 (工时求和)
-        3. B表拆分 (补助/费控) 并聚合
-        4. Left Join (以A表为主)
-        5. 计算最终金额 (工时费 + 差旅费)
-        """
-        c = lambda t: DataEngine.get_col(config_df, t)
+        """核心计算引擎"""
+        c = lambda t, s: DataEngine.get_col(config_df, t, s)
         
-        # 获取映射列名
-        col_a_user = c('人员')
-        col_a_spm = c('SPM')
-        col_a_hours = c('工时')
+        # --- 1. 读取配置 ---
+        # A表字段
+        col_a_user = c('人员', 'Source A')
+        col_a_spm = c('SPM', 'Source A')
+        col_a_hrs = c('耗时(小时)', 'Source A')
         # 维度
-        dims_a = {
-            'project': c('所属项目'), 'range': c('人事范围'), 'contract': c('合同主体'),
-            'sales': c('销售人员'), 'dept': c('销售部门')
+        dims = {
+            'project': c('所属项目', 'Source A'), 
+            'range': c('人事范围', 'Source A'), 
+            'contract': c('合同主体', 'Source A'),
+            'sales': c('销售人员', 'Source A'), 
+            'dept': c('销售部门', 'Source A')
         }
-        
-        col_b_user = c('人员 (B)')
-        col_b_spm = c('SPM (B)')
-        col_b_amt = c('金额')
-        col_b_type = c('费用类型')
+        # B表字段
+        col_b_user = c('人员 (B)', 'Source B')
+        col_b_spm = c('SPM (B)', 'Source B')
+        col_b_amt = c('金额', 'Source B')
+        col_b_type = c('费用类型', 'Source B')
 
-        # 1. 清洗数值
-        df_a[col_a_hours] = DataEngine.clean_num(df_a, col_a_hours)
+        # --- 2. 清洗 ---
+        df_a[col_a_hrs] = DataEngine.clean_num(df_a, col_a_hrs)
         df_b[col_b_amt] = DataEngine.clean_num(df_b, col_b_amt)
 
-        # 2. 聚合 A表 (工时)
-        # 规则: 按[人员, SPM]分组, 工时求和, 其他维度取第一条
-        agg_rules = {col_a_hours: 'sum'}
-        for _, col in dims_a.items():
+        # --- 3. 聚合 A表 (工时流) ---
+        # GroupBy: [User, SPM]
+        agg_rules = {col_a_hrs: 'sum'}
+        for _, col in dims.items():
             if col: agg_rules[col] = 'first'
         
         df_a_gp = df_a.groupby([col_a_user, col_a_spm], as_index=False).agg(agg_rules)
 
-        # 3. 拆分与聚合 B表 (费用)
-        # 规则: 按[人员, SPM]分组, 分别计算补助和其他
+        # --- 4. 聚合 B表 (费用流) ---
+        # 拆分补助与非补助
         is_sub = df_b[col_b_type].astype(str).str.contains(subsidy_tag, na=False)
         grp_b = [col_b_user, col_b_spm]
         
         df_sub = df_b[is_sub].groupby(grp_b)[col_b_amt].sum().reset_index(name='差旅补助')
         df_fee = df_b[~is_sub].groupby(grp_b)[col_b_amt].sum().reset_index(name='差旅费控平台')
 
-        # 4. 合并 (Left Join: A left join B)
-        # 统一关联键类型
+        # --- 5. 合并 (Left Join: A Left B) ---
+        # 统一类型防关联失败
         df_a_gp[col_a_spm] = df_a_gp[col_a_spm].astype(str)
         df_sub[col_b_spm] = df_sub[col_b_spm].astype(str)
         df_fee[col_b_spm] = df_fee[col_b_spm].astype(str)
         
         res = pd.merge(df_a_gp, df_sub, left_on=[col_a_user, col_a_spm], right_on=[col_b_user, col_b_spm], how='left')
         res = pd.merge(res, df_fee, left_on=[col_a_user, col_a_spm], right_on=[col_b_user, col_b_spm], how='left')
-        res = res.fillna(0) # 没匹配到的费用填0
+        res = res.fillna(0)
 
-        # 5. 计算金额
-        # 核心公式: (交付工时 / 8) * 单价 + 补助 + 费控
-        res['支持时间(人天)'] = res[col_a_hours] / 8
+        # --- 6. 核心算钱公式 ---
+        # 支持时间(人天) = 耗时 / 8
+        res['支持时间(人天)'] = res[col_a_hrs] / 8
+        # 人力费用 = 人天 * 单价
         res['人力费用'] = res['支持时间(人天)'] * price_per_day
+        # 总费用 = 人力 + 补助 + 费控
         res['结算费用合计'] = res['人力费用'] + res['差旅补助'] + res['差旅费控平台']
 
-        # 6. 生成表3 (详细明细 - 底表)
+        # --- 7. 生成结果表3 (底表) ---
         rename_map = {
-            col_a_user: '人员', dims_a['project']: '所属项目', dims_a['range']: '人事范围',
-            col_a_spm: 'SPM', dims_a['contract']: '合同主体', dims_a['sales']: '销售人员',
-            dims_a['dept']: '销售部门', col_a_hours: '耗时(小时)', 
-            '支持时间(人天)': '支持时间(人天)', '结算费用合计': '结算费用合计'
+            col_a_user: '人员', dims['project']: '所属项目', dims['range']: '人事范围',
+            col_a_spm: 'SPM', dims['contract']: '合同主体', dims['sales']: '销售人员',
+            dims['dept']: '销售部门', col_a_hrs: '耗时(小时)'
         }
-        # 仅重命名存在的列
         rename_map = {k:v for k,v in rename_map.items() if k in res.columns}
         t3 = res.rename(columns=rename_map)
         
-        final_cols = ['序号','人员','所属项目','人事范围','SPM','合同主体','销售人员','销售部门',
+        # 字段排序
+        cols_order = ['序号','人员','所属项目','人事范围','SPM','合同主体','销售人员','销售部门',
                       '差旅补助','差旅费控平台','耗时(小时)','支持时间(人天)','人力费用','结算费用合计']
         t3.insert(0, '序号', range(1, len(t3)+1))
-        # 按顺序提取存在的列
-        t3 = t3[[c for c in final_cols if c in t3.columns]]
+        t3 = t3[[c for c in cols_order if c in t3.columns]]
 
-        # 7. 生成表2 (结算汇总)
-        # 维度: 销售公司(人事范围) + 采购公司(合同主体) + 采购部门(销售部门)
+        # --- 8. 生成结果表2 (结算汇总) ---
+        # 来源：结果表3
+        # 分组：人事范围(销售公司) + 合同主体(采购公司) + 销售部门(采购部门)
         dims_t2 = ['人事范围', '合同主体', '销售部门']
         if all(c in t3.columns for c in dims_t2):
             t2 = t3.groupby(dims_t2).agg({'结算费用合计': 'sum', '支持时间(人天)': 'sum'}).reset_index()
             t2.columns = ['销售公司', '采购公司', '采购部门', '金额(含税,单位:元)', '工作量(人天)']
             t2.insert(0, '序号', range(1, len(t2)+1))
         else:
-            t2 = pd.DataFrame({'提示': ['缺少维度字段，无法生成']})
+            t2 = pd.DataFrame({'提示': ['底表缺少维度字段，无法聚合表2']})
 
-        # 8. 生成表1 (工时统计)
-        # 维度: 人员
+        # --- 9. 生成结果表1 (工时统计) ---
+        # 来源：结果表3
+        # 分组：人员
         if '人员' in t3.columns and '耗时(小时)' in t3.columns:
             t1 = t3.groupby('人员')['耗时(小时)'].sum().reset_index()
             t1.rename(columns={'耗时(小时)': '项目工时'}, inplace=True)
             t1.insert(0, '序号', range(1, len(t1)+1))
         else:
-            t1 = pd.DataFrame({'提示': ['缺少人员或工时字段']})
+            t1 = pd.DataFrame({'提示': ['底表缺少人员或耗时字段，无法聚合表1']})
 
         return {'t1': t1, 't2': t2, 't3': t3}
 
@@ -294,20 +301,20 @@ class UIComponents:
 
     @staticmethod
     def render_mapping_table(subset, is_edit, cols_a, cols_b):
-        st.markdown("""<div class="mapping-table"><div class="map-header-row"><div style="width:25%">目标字段</div><div style="width:35%">匹配列</div><div style="width:15%">来源表</div><div style="width:25%">逻辑说明</div></div>""", unsafe_allow_html=True)
+        st.markdown("""<div class="mapping-table"><div class="map-header-row"><div style="width:25%">目标字段</div><div style="width:35%">匹配列</div><div style="width:15%">源表</div><div style="width:25%">逻辑说明</div></div>""", unsafe_allow_html=True)
         for idx, row in subset.iterrows():
             st.markdown('<div class="map-data-row">', unsafe_allow_html=True)
             c1, c2, c3, c4 = st.columns([2.5, 3.5, 1.5, 2.5])
             c1.markdown(f"**{row['目标字段']}**")
             with c2:
                 if is_edit:
-                    opts = cols_a if row['来源']=='Source A' else cols_b
+                    opts = cols_a if row['源表']=='Source A' else cols_b
                     cur = row['匹配字段']
                     if cur not in opts: opts = [cur] + opts
                     new_val = st.selectbox("s", opts, index=opts.index(cur), key=f"s_{idx}", label_visibility="collapsed")
                     st.session_state.mapping_config.at[idx, '匹配字段'] = new_val
                 else: st.markdown(f"<span style='color:#a5d6ff; font-family:monospace;'>{row['匹配字段']}</span>", unsafe_allow_html=True)
-            c3.markdown(f"<span class='source-tag'>{row['来源']}</span>", unsafe_allow_html=True)
+            c3.markdown(f"<span class='source-tag'>{row['源表']}</span>", unsafe_allow_html=True)
             c4.markdown(f"<span style='color:#666; font-size:0.8rem;'>{row['计算逻辑']}</span>", unsafe_allow_html=True)
             st.markdown('</div>', unsafe_allow_html=True)
         st.markdown("</div>", unsafe_allow_html=True)
@@ -369,9 +376,9 @@ if st.session_state.page == 'main':
                 st.markdown("---")
                 c1, c2, c3 = st.columns(3)
                 fs = st.session_state.result_files
-                if 't1' in fs: c1.download_button("📥 表1", fs['t1'], "t1.xlsx", use_container_width=True)
-                if 't2' in fs: c2.download_button("📥 表2", fs['t2'], "t2.xlsx", use_container_width=True)
-                if 't3' in fs: c3.download_button("📥 表3", fs['t3'], "t3.xlsx", use_container_width=True)
+                if 't1' in fs: c1.download_button("📥 表1: 工时统计", fs['t1'], "t1.xlsx", use_container_width=True)
+                if 't2' in fs: c2.download_button("📥 表2: 结算汇总", fs['t2'], "t2.xlsx", use_container_width=True)
+                if 't3' in fs: c3.download_button("📥 表3: 详细明细", fs['t3'], "t3.xlsx", use_container_width=True)
         elif st.session_state.error_report is not None:
             def fix_action():
                 @st.dialog("🛠️ 在线修复", width="large")
@@ -477,8 +484,10 @@ elif st.session_state.page == 'mapping':
     cols_b = list(st.session_state.data_store['B']['df'].columns) if st.session_state.data_store['B']['df'] is not None else []
     
     df_c = st.session_state.mapping_config
-    t1, t2, t3 = st.tabs(["A表核心", "B表核心", "维度配置"])
+    t1, t2 = st.tabs(["输入映射", "输出逻辑"])
     
-    with t1: UIComponents.render_mapping_table(df_c[df_c['来源']=='Source A'][0:3], st.session_state.is_editing_mapping, cols_a, cols_b)
-    with t2: UIComponents.render_mapping_table(df_c[df_c['来源']=='Source B'], st.session_state.is_editing_mapping, cols_a, cols_b)
-    with t3: UIComponents.render_mapping_table(df_c[df_c['来源']=='Source A'][3:], st.session_state.is_editing_mapping, cols_a, cols_b)
+    with t1: 
+        UIComponents.render_mapping_table(df_c[df_c['所属表']=='输入映射'], st.session_state.is_editing_mapping, cols_a, cols_b)
+    with t2: 
+        # 输出逻辑为只读展示
+        UIComponents.render_mapping_table(df_c[df_c['所属表']=='输出逻辑'], False, [], [])
