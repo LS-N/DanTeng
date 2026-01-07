@@ -3,7 +3,6 @@ import pandas as pd
 import io
 import time
 import zipfile
-from st_aggrid import AgGrid, GridOptionsBuilder
 
 # ==============================================================================
 # Zone 0: 全局配置 & 样式注入
@@ -19,9 +18,6 @@ def inject_css():
         /* [UI] 顶部导航 */
         .nav-header { font-size: 1.2rem; font-weight: bold; margin-bottom: 10px; display:flex; align-items:center; height: 100%; }
         
-        /* [UI] 幽灵按钮 */
-        .ghost-btn button { border: 1px dashed #444 !important; color: #888 !important; background: transparent !important; }
-        
         /* [UI] 说明条 */
         .info-bar {
             background-color: rgba(56, 139, 253, 0.1);
@@ -30,76 +26,17 @@ def inject_css():
             padding: 8px 15px;
             margin-bottom: 20px;
             font-size: 0.9rem;
-        }
-
-        /* [核心] Excel 表格容器 */
-        .excel-table-wrapper {
-            display: flex;
-            flex-direction: column;
-            border: 1px solid var(--border-color); /* 外框 */
             border-radius: 4px;
-            background-color: #0d1117;
-            overflow: hidden;
         }
 
-        /* [核心] 通用行 (Flex布局) */
-        .excel-row {
-            display: flex;
-            width: 100%;
-            border-bottom: 1px solid var(--border-color); /* 行分割线 */
-            margin: 0 !important;
-            padding: 0 !important;
-            min-height: 45px; /* 固定行高 */
+        /* [UI] 强制 data_editor 表头背景色 */
+        div[data-testid="stDataFrame"] div[class^="stDataFrame"] {
+            border: 1px solid #30363d;
         }
-        .excel-row:last-child { border-bottom: none; } /* 最后一行去底边框 */
-
-        /* [核心] 单元格 */
-        .excel-cell {
-            border-right: 1px solid var(--border-color); /* 列分割线 */
-            display: flex;
-            align-items: center;     /* 垂直居中 */
-            justify-content: center; /* 水平居中 */
-            text-align: center;
-            padding: 5px;
-            font-size: 0.9rem;
-            color: #c9d1d9;
-            position: relative; /* 为select定位 */
-        }
-        .excel-cell:last-child { border-right: none; } /* 最后一列去右边框 */
-
-        /* 表头特定样式 */
-        .header-row {
-            background-color: #161b22;
-            font-weight: bold;
-            color: #fff;
-        }
-
-        /* 列宽定义 (严格百分比，必须与 st.columns 一致) */
-        .w-target { width: 25%; }
-        .w-match  { width: 30%; }
-        .w-source { width: 15%; }
-        .w-logic  { width: 30%; }
-
-        /* 标签 */
-        .source-tag { padding: 2px 8px; border-radius: 4px; font-size: 0.75rem; font-weight: 500; }
-        .tag-source { background: rgba(56, 139, 253, 0.15); color: #58a6ff; border: 1px solid rgba(56, 139, 253, 0.4); }
-        .tag-result { background: rgba(238, 138, 36, 0.15); color: #db8e37; border: 1px solid rgba(238, 138, 36, 0.4); }
-
-        /* [HACK] Streamlit 组件修正 */
+        
+        /* 隐藏 Streamlit 默认组件杂项 */
         div[data-testid="stFileUploader"] section > div:first-child { display: none; }
         div[data-testid="stFileUploader"] { padding-top: 15px; }
-        
-        /* 强制 Selectbox 填满单元格 */
-        div[data-testid="stSelectbox"] { margin-bottom: 0px !important; margin-top: 0px !important; }
-        div[data-testid="stSelectbox"] > div > div { 
-            min-height: 35px; border-color: transparent; background-color: transparent; 
-        }
-        /* 选中项颜色 */
-        div[data-testid="stSelectbox"] div[data-baseweb="select"] span { color: #a5d6ff !important; font-family: monospace; }
-        
-        /* 隐藏 Streamlit 默认列间距 */
-        div[data-testid="column"] { padding: 0 !important; }
-        div[data-testid="stVerticalBlock"] > div { gap: 0 !important; } /* 消除垂直间距的关键 */
     </style>
     """, unsafe_allow_html=True)
 
@@ -304,7 +241,7 @@ class UIComponents:
                 return st.file_uploader(title, type=['xlsx', 'csv'], key=f"uploader_{key}", label_visibility="collapsed")
             else:
                 c1, c2 = st.columns([9, 1])
-                c1.markdown(f"<div class='file-card-styled'><div><div style='font-size:0.8rem; color:#8b949e;'>{title.split(':')[0]}</div><div style='font-weight:bold; color:#fff;'>📄 {data['name']}</div><div style='font-size:0.8rem; color:#238636;'>✓ {len(data['df'])} 行</div></div></div>", unsafe_allow_html=True)
+                c1.markdown(f"<div style='background:#21262d; border-left:4px solid #238636; padding:15px; border-radius:4px;'>📄 {data['name']}</div>", unsafe_allow_html=True)
                 if c2.button("Del", key=f"del_{key}"): return "DELETE"
         return None
 
@@ -331,61 +268,53 @@ class UIComponents:
             if 't3' in result_files: c3.download_button("📥 表3: 详细明细", result_files['t3'], "t3.xlsx", use_container_width=True)
 
     @staticmethod
-    def render_tab_content(description, subset, is_edit, cols_a, cols_b):
-        # 4. 用途说明
-        st.markdown(f'<div class="info-bar">ℹ️ {description}</div>', unsafe_allow_html=True)
+    def render_native_table(subset, is_edit, cols_all):
+        """使用 Streamlit 原生 DataEditor 渲染完美表格"""
         
-        # 表格容器开头
-        st.markdown('<div class="excel-table-wrapper">', unsafe_allow_html=True)
+        # 1. 准备数据展示副本
+        df_display = subset[['目标字段', '匹配字段', '源表', '计算逻辑']].copy()
         
-        # --- 表头 ---
-        st.markdown("""
-        <div class="excel-row header-row">
-            <div class="excel-cell w-target">目标字段</div>
-            <div class="excel-cell w-match">匹配字段</div>
-            <div class="excel-cell w-source">源表</div>
-            <div class="excel-cell w-logic">逻辑说明</div>
-        </div>
-        """, unsafe_allow_html=True)
+        # 2. 配置列
+        column_config = {
+            "目标字段": st.column_config.TextColumn("目标字段", disabled=True, width="medium"),
+            "源表": st.column_config.TextColumn("源表", disabled=True, width="small"),
+            "计算逻辑": st.column_config.TextColumn("逻辑说明", disabled=True, width="large"),
+        }
         
-        # --- 内容行 ---
-        for idx, row in subset.iterrows():
-            is_result_source = row['源表'] == '结果表3'
-            
-            # 使用 container wrapper (excel-row)
-            st.markdown('<div class="excel-row">', unsafe_allow_html=True)
-            
-            # 使用 st.columns 实现内容，但完全依赖 CSS 去除间距
-            c1, c2, c3, c4 = st.columns([25, 30, 15, 30])
-            
-            with c1:
-                st.markdown(f'<div class="excel-cell" style="width:100%; border-bottom:none; border-right:none;"><strong>{row["目标字段"]}</strong></div>', unsafe_allow_html=True)
-            
-            with c2:
-                # 交互列
-                if st.session_state.is_editing_mapping and not is_result_source:
-                    opts = cols_a if row['源表']=='Source A' else cols_b
-                    cur = row['匹配字段']
-                    if cur not in opts: opts = [cur] + opts
-                    # 包裹 selectbox
-                    st.markdown('<div class="excel-cell" style="width:100%; border-bottom:none; border-right:none; padding:0;">', unsafe_allow_html=True)
-                    new_val = st.selectbox("s", opts, index=opts.index(cur), key=f"s_{idx}", label_visibility="collapsed")
-                    st.session_state.mapping_config.at[idx, '匹配字段'] = new_val
-                    st.markdown('</div>', unsafe_allow_html=True)
-                else:
-                    color = "#a5d6ff" if not is_result_source else "#8b949e"
-                    st.markdown(f'<div class="excel-cell" style="width:100%; border-bottom:none; border-right:none; color:{color}; font-family:monospace;">{row["匹配字段"]}</div>', unsafe_allow_html=True)
-            
-            with c3:
-                tag_cls = 'tag-result' if is_result_source else 'tag-source'
-                st.markdown(f'<div class="excel-cell" style="width:100%; border-bottom:none; border-right:none;"><span class="source-tag {tag_cls}">{row["源表"]}</span></div>', unsafe_allow_html=True)
-            
-            with c4:
-                st.markdown(f'<div class="excel-cell" style="width:100%; border-bottom:none; border-right:none; color:#888;">{row["计算逻辑"]}</div>', unsafe_allow_html=True)
-                
-            st.markdown('</div>', unsafe_allow_html=True) # End excel-row
+        # 3. 动态配置下拉框 (仅在编辑模式且有文件且是源表字段时)
+        # 注意：st.data_editor 的 Selectbox 无法针对不同行设置不同选项
+        # 妥协方案：提供所有列名 (A+B) 供选择，这在交互上是“完整的表”的最佳解法
+        if is_edit:
+            # 只有源表不是"结果表3"的行才允许编辑，但在 data_editor 中只能按列配置
+            # 这里的权衡是：为了表格的完美样式，我们开放下拉框，但后端只接受有效修改
+            column_config["匹配字段"] = st.column_config.SelectboxColumn(
+                "匹配字段 (可编辑)",
+                options=cols_all,
+                width="medium",
+                required=True
+            )
+        else:
+            column_config["匹配字段"] = st.column_config.TextColumn("匹配字段", disabled=True, width="medium")
 
-        st.markdown('</div>', unsafe_allow_html=True) # End excel-table-wrapper
+        # 4. 渲染表格
+        edited_df = st.data_editor(
+            df_display,
+            column_config=column_config,
+            use_container_width=True,
+            hide_index=True,
+            disabled=not is_edit, # 全局控制
+            key=f"editor_{subset.index[0]}" # 唯一Key
+        )
+        
+        # 5. 回写逻辑 (如果编辑了)
+        if is_edit:
+            # 找出变动的行
+            for idx, row in edited_df.iterrows():
+                original_row = st.session_state.mapping_config.loc[subset.index[idx]]
+                if row['匹配字段'] != original_row['匹配字段']:
+                    # 保护机制：如果源表是结果表3，禁止修改
+                    if original_row['源表'] != '结果表3':
+                        st.session_state.mapping_config.at[subset.index[idx], '匹配字段'] = row['匹配字段']
 
 # ==============================================================================
 # Zone C: 控制层 (Controller)
@@ -515,7 +444,7 @@ if st.session_state.page == 'main':
                 st.rerun()
 
 elif st.session_state.page == 'mapping':
-    # 1. 顶部导航 (Title + Small Return Button)
+    # 1. 顶部导航 (Small Return Button)
     c1, c2 = st.columns([9, 1])
     c1.markdown("<div class='nav-header'>🐱 字段映射 & 逻辑配置</div>", unsafe_allow_html=True)
     if c2.button("⬅️", use_container_width=True, help="返回主页"): 
@@ -546,25 +475,22 @@ elif st.session_state.page == 'mapping':
                 st.rerun()
 
     # 3. 结果表切换
-    df_c = st.session_state.mapping_config
+    df_c = st.session_state.mapping_config.reset_index(drop=True)
     t1, t2, t3 = st.tabs(["结果表3 (底表)", "结果表2 (结算)", "结果表1 (工时)"])
     
-    cols_a = list(st.session_state.data_store['A']['df'].columns) if has_files else []
-    cols_b = list(st.session_state.data_store['B']['df'].columns) if has_files else []
+    cols_all = []
+    if has_files:
+        cols_all = list(st.session_state.data_store['A']['df'].columns) + list(st.session_state.data_store['B']['df'].columns)
 
-    # 4. 内容渲染
+    # 4. 内容渲染 (Native Data Editor)
     with t1:
-        UIComponents.render_tab_content(
-            "全量明细底表：基于 Source A/B 进行清洗、聚合、关联计算后的宽表。",
-            df_c[df_c['所属表']=='结果表3'], st.session_state.is_editing_mapping, cols_a, cols_b
-        )
+        st.markdown(f'<div class="info-bar">ℹ️ 全量明细底表：基于 Source A/B 进行清洗、聚合、关联计算后的宽表。</div>', unsafe_allow_html=True)
+        UIComponents.render_native_table(df_c[df_c['所属表']=='结果表3'], st.session_state.is_editing_mapping, cols_all)
+        
     with t2:
-        UIComponents.render_tab_content(
-            "结算汇总表：基于【结果表3】按公司/部门维度二次聚合的金额数据。",
-            df_c[df_c['所属表']=='结果表2'], st.session_state.is_editing_mapping, cols_a, cols_b
-        )
+        st.markdown(f'<div class="info-bar">ℹ️ 结算汇总表：基于【结果表3】按公司/部门维度二次聚合的金额数据。</div>', unsafe_allow_html=True)
+        UIComponents.render_native_table(df_c[df_c['所属表']=='结果表2'], st.session_state.is_editing_mapping, cols_all)
+        
     with t3:
-        UIComponents.render_tab_content(
-            "工时统计表：基于【结果表3】按人员维度二次聚合的工时数据。",
-            df_c[df_c['所属表']=='结果表1'], st.session_state.is_editing_mapping, cols_a, cols_b
-        )
+        st.markdown(f'<div class="info-bar">ℹ️ 工时统计表：基于【结果表3】按人员维度二次聚合的工时数据。</div>', unsafe_allow_html=True)
+        UIComponents.render_native_table(df_c[df_c['所属表']=='结果表1'], st.session_state.is_editing_mapping, cols_all)
