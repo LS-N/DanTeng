@@ -29,10 +29,28 @@ def inject_css():
             border-radius: 4px;
         }
 
-        /* 强制表格容器样式 */
-        .stDataFrame { border: 1px solid #30363d; border-radius: 4px; }
+        /* [核心] 强制表格内容居中 (CSS Hack) */
+        /* 表头 */
+        [data-testid="stDataFrame"] th {
+            text-align: center !important;
+            vertical-align: middle !important;
+            background-color: #161b22 !important;
+            color: white !important;
+            border-bottom: 1px solid #30363d !important;
+        }
+        /* 单元格内容 */
+        [data-testid="stDataFrame"] td {
+            text-align: center !important;
+            vertical-align: middle !important;
+            border-bottom: 1px solid #30363d !important;
+        }
+        /* 下拉框居中 */
+        [data-testid="stDataFrame"] select {
+            text-align: center !important;
+            margin: 0 auto !important;
+        }
         
-        /* 隐藏杂项 */
+        /* 隐藏上传组件默认列表 */
         div[data-testid="stFileUploader"] section > div:first-child { display: none; }
         div[data-testid="stFileUploader"] { padding-top: 15px; }
     </style>
@@ -44,7 +62,7 @@ def inject_css():
 class DataEngine:
     @staticmethod
     def get_default_config():
-        # 🔒 表示系统锁定行，禁止编辑
+        # 🔒 标记系统行
         return pd.DataFrame([
             # === 结果表 3 (14个核心字段 + 辅助) ===
             {"所属表": "结果表3", "序号": 1, "目标字段": "序号", "源表": "🔒 系统生成", "匹配字段": "-", "逻辑说明": "自增序列"},
@@ -253,85 +271,60 @@ class UIComponents:
 
     @staticmethod
     def render_native_editor(desc, subset, is_edit, cols_a, cols_b):
-        """
-        渲染原生表格 (Native Table)
-        - 强制包含四列：序号, 目标字段, 源表, 匹配字段, 逻辑说明
-        - 严格控制可编辑性
-        """
+        """渲染原生表格 (无 alignment 参数版)"""
         st.markdown(f'<div class="info-bar">ℹ️ {desc}</div>', unsafe_allow_html=True)
         
-        # 1. 准备数据副本
+        # 1. 准备数据
         df_display = subset[['序号', '目标字段', '源表', '匹配字段', '逻辑说明']].copy().reset_index(drop=True)
         
-        # 3. 列配置 (Column Config)
+        # 3. 列配置 (移除 alignment 参数，完全依赖 CSS)
         column_config = {
-            "序号": st.column_config.NumberColumn("序号", width="small", disabled=True, alignment="center"),
-            "目标字段": st.column_config.TextColumn("目标字段", disabled=True, width="medium", alignment="center"),
-            "逻辑说明": st.column_config.TextColumn("逻辑说明", disabled=True, width="large", alignment="center"),
+            "序号": st.column_config.NumberColumn("序号", width="small", disabled=True),
+            "目标字段": st.column_config.TextColumn("目标字段", disabled=True, width="medium"),
+            "逻辑说明": st.column_config.TextColumn("逻辑说明", disabled=True, width="large"),
         }
 
-        # 4. 动态配置可编辑列 (源表 & 匹配字段)
+        # 4. 动态配置可编辑列
         if is_edit:
-            # 源表下拉框 (不允许为空)
             column_config["源表"] = st.column_config.SelectboxColumn(
-                "源表", 
-                options=["Source A", "Source B"], 
-                width="small",
-                required=True,
-                alignment="center"
+                "源表", options=["Source A", "Source B"], width="small", required=True
             )
-            # 匹配字段下拉框 (不允许为空) - 这里为了体验，合并所有可能的列
-            # 实际上我们会根据行选的源表来校验，但在UI上提供全集更方便
             column_config["匹配字段"] = st.column_config.SelectboxColumn(
-                "匹配字段",
-                options=cols_a + cols_b,
-                width="medium",
-                required=True,
-                alignment="center"
+                "匹配字段", options=cols_a + cols_b, width="medium", required=True
             )
         else:
-            # 非编辑模式全只读
-            column_config["源表"] = st.column_config.TextColumn("源表", disabled=True, alignment="center")
-            column_config["匹配字段"] = st.column_config.TextColumn("匹配字段", disabled=True, alignment="center")
+            column_config["源表"] = st.column_config.TextColumn("源表", disabled=True)
+            column_config["匹配字段"] = st.column_config.TextColumn("匹配字段", disabled=True)
 
         # 5. 渲染表格
         edited = st.data_editor(
-            df_display, # 直接传DF，不传Styler，解决编辑失效问题
+            df_display,
             column_config=column_config,
             use_container_width=True,
             hide_index=True,
             disabled=not is_edit, 
-            key=f"editor_{subset.iloc[0]['所属表']}",
-            # height=35 * (len(df_display) + 1) + 20 
+            key=f"editor_{subset.iloc[0]['所属表']}"
         )
 
-        # 6. 后端逻辑封堵 (Logic Gate)
+        # 6. 后端逻辑封堵 (禁止修改系统行)
         if is_edit:
             for i, row in edited.iterrows():
                 orig_idx = subset.index[i]
                 orig_row = st.session_state.mapping_config.loc[orig_idx]
                 
-                # 规则1: 如果原始源表是 '结果表X'，严禁修改任何内容
-                if '结果表' in orig_row['源表'] or '系统' in orig_row['源表'] or '公式' in orig_row['源表']:
-                    continue # 跳过回写，相当于前端改了也没用
+                # 只有 Source A/B 允许改
+                if 'Source' not in orig_row['源表']:
+                    continue 
                 
-                # 规则2: 源表变更 -> 自动匹配
+                # 源表/字段变更逻辑
                 if row['源表'] != orig_row['源表']:
                     st.session_state.mapping_config.at[orig_idx, '源表'] = row['源表']
-                    # 尝试在新源表中找同名字段 (简单自动映射)
                     target_opts = cols_a if row['源表'] == 'Source A' else cols_b
-                    # 如果当前匹配字段在新表里也有，保留；否则置为 None (前端会变红或空)
-                    # 这里为了防止报错，我们暂且保留原值，让用户自己去改，或者设为第一个
-                    if row['匹配字段'] not in target_opts:
-                        # 尝试智能查找目标字段名
-                        if row['目标字段'] in target_opts:
-                            st.session_state.mapping_config.at[orig_idx, '匹配字段'] = row['目标字段']
-                        else:
-                            st.session_state.mapping_config.at[orig_idx, '匹配字段'] = target_opts[0] if target_opts else None
-                
-                # 规则3: 匹配字段变更 (且源表正确)
+                    # 自动匹配
+                    new_val = row['目标字段'] if row['目标字段'] in target_opts else (target_opts[0] if target_opts else None)
+                    st.session_state.mapping_config.at[orig_idx, '匹配字段'] = new_val
                 elif row['匹配字段'] != orig_row['匹配字段']:
-                    # 校验字段是否属于当前源表
+                    # 校验归属
                     valid_opts = cols_a if row['源表'] == 'Source A' else cols_b
                     if row['匹配字段'] in valid_opts:
                         st.session_state.mapping_config.at[orig_idx, '匹配字段'] = row['匹配字段']
@@ -464,7 +457,7 @@ if st.session_state.page == 'main':
                 st.rerun()
 
 elif st.session_state.page == 'mapping':
-    # 1. 顶部导航
+    # 1. 顶部导航 (Title + Small Return Button)
     c1, c2 = st.columns([9, 1])
     c1.markdown("<div class='nav-header'>🐱 字段映射 & 逻辑配置</div>", unsafe_allow_html=True)
     if c2.button("⬅️", use_container_width=True, help="返回主页"): 
