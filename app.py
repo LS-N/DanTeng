@@ -16,57 +16,58 @@ def inject_css():
         :root { --bg-color: #0d1117; --card-bg: #161b22; --accent: #238636; --text: #c9d1d9; --red: #da3633; --border: #30363d; }
         .stApp { background-color: var(--bg-color); color: var(--text); }
         
-        /* [UI] 卡片 */
+        /* 通用组件 */
         .file-card-styled { 
             background: #21262d; border-left: 4px solid #238636; border-radius: 4px; padding: 15px; 
             width: 100%; height: 100%; display: flex; align-items: center; justify-content: space-between; 
         }
-        /* [UI] 错误舱 */
         .error-box { border: 1px solid var(--red); background: rgba(218, 54, 51, 0.1); border-radius: 8px; padding: 1.5rem; margin-top: 1rem; }
+        .ghost-btn button { border: 1px dashed #444 !important; color: #888 !important; background: transparent !important; }
         
-        /* [UI] 顶部导航 */
-        .nav-header { font-size: 1.2rem; font-weight: bold; margin-bottom: 20px; }
-        
-        /* [UI] 表格容器 */
-        .table-container {
+        /* [核心修改] 真正的表格样式 */
+        .grid-table {
+            display: flex;
+            flex-direction: column;
             border: 1px solid #30363d;
             border-radius: 6px;
-            background-color: #0d1117;
             overflow: hidden;
-            margin-bottom: 20px;
-        }
-        
-        /* [UI] 表头单元格 - 增加右边框和居中 */
-        div.header-cell {
-            background-color: #161b22;
-            color: #c9d1d9;
-            font-weight: bold;
-            padding: 15px 5px;
-            border-bottom: 2px solid #30363d;
-            border-right: 1px solid #30363d; /* 垂直分割线 */
-            height: 100%;
-            display: flex; 
-            align-items: center; 
-            justify-content: center; /* 水平居中 */
-            text-align: center;
-        }
-        
-        /* [UI] 内容行单元格 - 增加右边框和居中 */
-        div.row-cell {
-            padding: 12px 5px;
-            border-bottom: 1px solid #21262d;
-            border-right: 1px solid #21262d; /* 垂直分割线 */
-            height: 100%;
-            display: flex; 
-            align-items: center; 
-            justify-content: center; /* 水平居中 */
-            text-align: center;
             font-size: 0.9rem;
-            width: 100%;
+            background-color: #0d1117;
         }
         
-        /* 去掉最后一列的右边框 */
-        .no-border-right { border-right: none !important; }
+        /* 通用行样式 (Flex布局) */
+        .grid-row {
+            display: flex;
+            width: 100%;
+            border-bottom: 1px solid #30363d;
+            margin: 0 !important; /* 强制去除间距 */
+        }
+        .grid-row:last-child { border-bottom: none; }
+        
+        /* 表头特定样式 */
+        .grid-header {
+            background-color: #161b22;
+            font-weight: bold;
+            color: #c9d1d9;
+        }
+        
+        /* 单元格样式 (模拟垂直线) */
+        .grid-cell {
+            padding: 10px 10px;
+            border-right: 1px solid #30363d; /* 垂直分割线 */
+            display: flex;
+            align-items: center; /* 垂直居中 */
+            justify-content: center; /* 水平居中 */
+            text-align: center;
+            overflow: hidden;
+        }
+        .grid-cell:last-child { border-right: none; } /* 最后一列无右边框 */
+        
+        /* 列宽定义 (严格百分比) */
+        .col-target { width: 20%; }
+        .col-match  { width: 30%; }
+        .col-source { width: 15%; }
+        .col-logic  { width: 35%; }
         
         /* 标签 */
         .source-tag { 
@@ -87,22 +88,26 @@ def inject_css():
             display: flex; align-items: center; gap: 10px;
         }
 
-        /* 隐藏 Streamlit 默认组件杂项 */
+        /* 隐藏杂项 */
         div[data-testid="stFileUploader"] section > div:first-child { display: none; }
         div[data-testid="stFileUploader"] { padding-top: 15px; }
-        div[data-testid="stSelectbox"] { margin-bottom: 0px; }
-        div[data-testid="stSelectbox"] > div > div { min-height: 32px; border-color: #30363d; background-color: #0d1117; justify-content: center; }
+        
+        /* 修正 Selectbox: 移除默认的外边距，使其填满单元格 */
+        div[data-testid="stSelectbox"] { width: 100%; }
+        div[data-testid="stSelectbox"] > div > div { 
+            min-height: 32px; border-color: #30363d; background-color: #0d1117; 
+        }
     </style>
     """, unsafe_allow_html=True)
 
 # ==============================================================================
-# Zone A: 纯逻辑层 (DataEngine) - V10.0 内核
+# Zone A: 纯逻辑层 (DataEngine)
 # ==============================================================================
 class DataEngine:
     @staticmethod
     def get_default_config():
         return pd.DataFrame([
-            # === 结果表 3 (底表) ===
+            # === 结果表 3 ===
             {"所属表": "结果表3", "目标字段": "人员", "源表": "Source A", "匹配字段": "人员", "计算逻辑": "主键 (Join Key)"},
             {"所属表": "结果表3", "目标字段": "SPM", "源表": "Source A", "匹配字段": "SPM", "计算逻辑": "主键 (Join Key)"},
             {"所属表": "结果表3", "目标字段": "耗时(小时)", "源表": "Source A", "匹配字段": "交付工时", "计算逻辑": "SUM聚合 (清洗)"},
@@ -111,20 +116,19 @@ class DataEngine:
             {"所属表": "结果表3", "目标字段": "合同主体", "源表": "Source A", "匹配字段": "合同主体", "计算逻辑": "维度 (->采购公司)"},
             {"所属表": "结果表3", "目标字段": "销售人员", "源表": "Source A", "匹配字段": "销售", "计算逻辑": "维度 (First)"},
             {"所属表": "结果表3", "目标字段": "销售部门", "源表": "Source A", "匹配字段": "销售部门", "计算逻辑": "维度 (->采购部门)"},
-            
             {"所属表": "结果表3", "目标字段": "人员 (B)", "源表": "Source B", "匹配字段": "出差人", "计算逻辑": "外键 (Join Key)"},
             {"所属表": "结果表3", "目标字段": "SPM (B)", "源表": "Source B", "匹配字段": "SPM", "计算逻辑": "外键 (Join Key)"},
             {"所属表": "结果表3", "目标字段": "金额", "源表": "Source B", "匹配字段": "金额", "计算逻辑": "SUM聚合 (清洗)"},
             {"所属表": "结果表3", "目标字段": "费用类型", "源表": "Source B", "匹配字段": "产品类型", "计算逻辑": "分类依据 (补助/费控)"},
 
-            # === 结果表 2 (结算) ===
+            # === 结果表 2 ===
             {"所属表": "结果表2", "目标字段": "销售公司", "源表": "结果表3", "匹配字段": "人事范围", "计算逻辑": "维度分组"},
             {"所属表": "结果表2", "目标字段": "采购公司", "源表": "结果表3", "匹配字段": "合同主体", "计算逻辑": "维度分组"},
             {"所属表": "结果表2", "目标字段": "采购部门", "源表": "结果表3", "匹配字段": "销售部门", "计算逻辑": "维度分组"},
             {"所属表": "结果表2", "目标字段": "金额", "源表": "结果表3", "匹配字段": "结算费用合计", "计算逻辑": "SUM聚合"},
             {"所属表": "结果表2", "目标字段": "工作量", "源表": "结果表3", "匹配字段": "支持时间(人天)", "计算逻辑": "SUM聚合"},
 
-            # === 结果表 1 (工时) ===
+            # === 结果表 1 ===
             {"所属表": "结果表1", "目标字段": "人员", "源表": "结果表3", "匹配字段": "人员", "计算逻辑": "维度分组"},
             {"所属表": "结果表1", "目标字段": "项目工时", "源表": "结果表3", "匹配字段": "耗时(小时)", "计算逻辑": "SUM聚合"},
         ])
@@ -325,51 +329,70 @@ class UIComponents:
 
     @staticmethod
     def render_tab_content(description, subset, is_edit, cols_a, cols_b):
-        """渲染映射表内容 (Strict Aligned Table)"""
-        # 4. 用途说明
+        # 1. 用途说明
         st.markdown(f'<div class="info-bar">ℹ️ {description}</div>', unsafe_allow_html=True)
         
-        # 表格容器
-        st.markdown('<div class="table-container">', unsafe_allow_html=True)
+        # 2. 表格容器 (Grid Table)
+        st.markdown('<div class="grid-table">', unsafe_allow_html=True)
         
-        # 表头 (2.5 - 3.5 - 1.5 - 2.5)
-        c1, c2, c3, c4 = st.columns([2.5, 3.5, 1.5, 2.5])
-        with c1: st.markdown('<div class="header-cell">目标字段</div>', unsafe_allow_html=True)
-        with c2: st.markdown('<div class="header-cell">匹配字段</div>', unsafe_allow_html=True)
-        with c3: st.markdown('<div class="header-cell">源表</div>', unsafe_allow_html=True)
-        with c4: st.markdown('<div class="header-cell no-border-right">逻辑说明</div>', unsafe_allow_html=True)
+        # 表头
+        st.markdown("""
+        <div class="grid-row grid-header">
+            <div class="grid-cell col-target">目标字段</div>
+            <div class="grid-cell col-match">匹配字段</div>
+            <div class="grid-cell col-source">源表</div>
+            <div class="grid-cell col-logic">逻辑说明</div>
+        </div>
+        """, unsafe_allow_html=True)
         
         # 表内容
         for idx, row in subset.iterrows():
             is_result_source = row['源表'] == '结果表3'
             
-            # 使用 container 模拟行容器，保持列宽一致
-            c1, c2, c3, c4 = st.columns([2.5, 3.5, 1.5, 2.5])
+            # 使用 container 包装行，并插入 columns 
+            # (注意：为了不破坏 HTML 结构，这里使用 markdown 直接生成 div)
+            
+            # 为了嵌入 Selectbox (Widget)，必须暂时跳出 HTML Block
+            # 但又必须维持 Flex 布局。这里使用 st.columns 模拟，但要非常小心 CSS
+            
+            # 💡 解决方案：放弃 st.columns 的默认 gutter，完全用 CSS 控制
+            # 我们用 Markdown 的 raw HTML 开头，中间插 Widget，再结尾
+            # 但 Streamlit 不支持在 markdown div 中插 widget。
+            
+            # 退回策略：使用 st.columns，但外层包裹 .grid-row
+            st.markdown('<div class="grid-row">', unsafe_allow_html=True)
+            
+            # 使用 Streamlit 原生列布局，通过 CSS .grid-row > div:nth-child 修正样式
+            # 比例需与 CSS 定义一致 (20, 30, 15, 35)
+            c1, c2, c3, c4 = st.columns([20, 30, 15, 35])
             
             with c1:
-                st.markdown(f'<div class="row-cell" style="font-weight:bold;">{row["目标字段"]}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="grid-cell" style="border:none; width:100%;"><strong>{row["目标字段"]}</strong></div>', unsafe_allow_html=True)
             
             with c2:
-                # 核心交互逻辑
-                if st.session_state.is_editing_mapping and not is_result_source:
+                # 核心：Selectbox vs Text
+                # 我们给这列包一个带右边框的 div 样式
+                # 但 st.columns 已经分列了。我们只需确保内容居中
+                if is_edit and not is_result_source:
                     opts = cols_a if row['源表']=='Source A' else cols_b
                     cur = row['匹配字段']
                     if cur not in opts: opts = [cur] + opts
-                    # 此时不包 row-cell div，让 selectbox 填满，CSS 已处理高度
                     new_val = st.selectbox("s", opts, index=opts.index(cur), key=f"s_{idx}", label_visibility="collapsed")
                     st.session_state.mapping_config.at[idx, '匹配字段'] = new_val
                 else:
                     color = "#a5d6ff" if not is_result_source else "#8b949e"
-                    st.markdown(f'<div class="row-cell" style="color:{color}; font-family:monospace;">{row["匹配字段"]}</div>', unsafe_allow_html=True)
+                    st.markdown(f'<div class="grid-cell" style="border:none; width:100%; color:{color}; font-family:monospace;">{row["匹配字段"]}</div>', unsafe_allow_html=True)
             
             with c3:
                 tag_cls = 'tag-result' if is_result_source else 'tag-source'
-                st.markdown(f'<div class="row-cell"><span class="source-tag {tag_cls}">{row["源表"]}</span></div>', unsafe_allow_html=True)
-            
-            with c4:
-                st.markdown(f'<div class="row-cell no-border-right" style="color:#888;">{row["计算逻辑"]}</div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="grid-cell" style="border:none; width:100%;"><span class="source-tag {tag_cls}">{row["源表"]}</span></div>', unsafe_allow_html=True)
                 
-        st.markdown('</div>', unsafe_allow_html=True) # End table-container
+            with c4:
+                st.markdown(f'<div class="grid-cell" style="border:none; width:100%; color:#888;">{row["计算逻辑"]}</div>', unsafe_allow_html=True)
+                
+            st.markdown('</div>', unsafe_allow_html=True) # End grid-row
+
+        st.markdown('</div>', unsafe_allow_html=True) # End grid-table
 
 # ==============================================================================
 # Zone C: 控制层 (Controller)
@@ -499,9 +522,9 @@ if st.session_state.page == 'main':
                 st.rerun()
 
 elif st.session_state.page == 'mapping':
-    # 1. 顶部导航 (Title + Return)
+    # 1. 顶部导航
     c1, c2 = st.columns([9, 1])
-    c1.markdown("<div class='nav-header'>🐱 字段映射 & 逻辑配置</div>", unsafe_allow_html=True)
+    c1.markdown("### 🐱 字段映射 & 逻辑")
     if c2.button("⬅️ 返回", use_container_width=True): 
         st.session_state.page = 'main'
         st.rerun()
