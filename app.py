@@ -6,7 +6,7 @@ import zipfile
 from st_aggrid import AgGrid, GridOptionsBuilder
 
 # ==============================================================================
-# Zone 0: 全局配置 & 样式注入 (Global Config)
+# Zone 0: 全局配置 & 样式注入
 # ==============================================================================
 st.set_page_config(page_title="淡藤财务报表 Pro", page_icon="😈", layout="wide", initial_sidebar_state="expanded")
 
@@ -23,6 +23,7 @@ def inject_css():
         }
         /* [UI] 错误舱 */
         .error-box { border: 1px solid var(--red); background: rgba(218, 54, 51, 0.1); border-radius: 8px; padding: 1.5rem; margin-top: 1rem; }
+        
         /* [UI] 按钮 */
         .ghost-btn button { border: 1px dashed #444 !important; color: #888 !important; background: transparent !important; }
         .cat-btn button { border: 1px solid #30363d !important; background: #161b22 !important; color: #c9d1d9 !important; width: 100%; margin-top: 10px; }
@@ -35,6 +36,7 @@ def inject_css():
             overflow: hidden;
             margin-bottom: 20px;
             font-size: 0.9rem;
+            background-color: #0d1117;
         }
         
         /* 表头 */
@@ -53,11 +55,12 @@ def inject_css():
         .map-row {
             display: grid;
             grid-template-columns: 2fr 3fr 1.5fr 3.5fr; /* 与表头一致 */
-            padding: 12px 20px;
+            padding: 10px 20px;
             border-bottom: 1px solid #21262d;
             align-items: center; /* 垂直居中 */
             background-color: #0d1117;
             transition: background 0.2s;
+            min-height: 50px;
         }
         .map-row:hover { background-color: #1c2128; }
         .map-row:last-child { border-bottom: none; }
@@ -69,6 +72,17 @@ def inject_css():
         .tag-source { background: rgba(56, 139, 253, 0.15); color: #58a6ff; border: 1px solid rgba(56, 139, 253, 0.4); }
         .tag-result { background: rgba(238, 138, 36, 0.15); color: #db8e37; border: 1px solid rgba(238, 138, 36, 0.4); }
         
+        /* 说明条样式 */
+        .info-bar {
+            background-color: rgba(56, 139, 253, 0.1);
+            border-left: 3px solid #58a6ff;
+            color: #c9d1d9;
+            padding: 10px 15px;
+            border-radius: 0 4px 4px 0;
+            margin-bottom: 15px;
+            font-size: 0.9rem;
+        }
+
         /* 隐藏 Streamlit 默认组件杂项 */
         div[data-testid="stFileUploader"] section > div:first-child { display: none; }
         div[data-testid="stFileUploader"] { padding-top: 15px; }
@@ -82,29 +96,31 @@ def inject_css():
     """, unsafe_allow_html=True)
 
 # ==============================================================================
-# Zone A: 纯逻辑层 (DataEngine) - V10.0 内核 (基于真实文件)
+# Zone A: 纯逻辑层 (DataEngine) - V10.0 内核
 # ==============================================================================
 class DataEngine:
     @staticmethod
     def get_default_config():
         """
-        定义字段映射默认配置
-        逻辑：基于用户上传的真实文件表头 (来源表1/2) 和 结果表定义
+        定义字段映射默认配置 (模板)
+        严格基于用户提供的 Excel 文件表头，确保自动匹配成功率
         """
         return pd.DataFrame([
             # === 结果表 3 (底表) ===
+            # Source A (工时表)
             {"所属表": "结果表3", "目标字段": "人员", "源表": "Source A", "匹配字段": "人员", "计算逻辑": "主键 (Join Key)"},
             {"所属表": "结果表3", "目标字段": "SPM", "源表": "Source A", "匹配字段": "SPM", "计算逻辑": "主键 (Join Key)"},
-            {"所属表": "结果表3", "目标字段": "耗时(小时)", "源表": "Source A", "匹配字段": "交付工时", "计算逻辑": "SUM聚合 (清洗数值)"},
+            {"所属表": "结果表3", "目标字段": "耗时(小时)", "源表": "Source A", "匹配字段": "交付工时", "计算逻辑": "SUM聚合 (清洗)"},
             {"所属表": "结果表3", "目标字段": "所属项目", "源表": "Source A", "匹配字段": "所属项目", "计算逻辑": "维度 (First)"},
-            {"所属表": "结果表3", "目标字段": "人事范围", "源表": "Source A", "匹配字段": "人事范围", "计算逻辑": "维度 (对应销售公司)"},
-            {"所属表": "结果表3", "目标字段": "合同主体", "源表": "Source A", "匹配字段": "合同主体", "计算逻辑": "维度 (对应采购公司)"},
+            {"所属表": "结果表3", "目标字段": "人事范围", "源表": "Source A", "匹配字段": "人事范围", "计算逻辑": "维度 (->销售公司)"},
+            {"所属表": "结果表3", "目标字段": "合同主体", "源表": "Source A", "匹配字段": "合同主体", "计算逻辑": "维度 (->采购公司)"},
             {"所属表": "结果表3", "目标字段": "销售人员", "源表": "Source A", "匹配字段": "销售", "计算逻辑": "维度 (First)"},
-            {"所属表": "结果表3", "目标字段": "销售部门", "源表": "Source A", "匹配字段": "销售部门", "计算逻辑": "维度 (对应采购部门)"},
+            {"所属表": "结果表3", "目标字段": "销售部门", "源表": "Source A", "匹配字段": "销售部门", "计算逻辑": "维度 (->采购部门)"},
             
+            # Source B (费用表)
             {"所属表": "结果表3", "目标字段": "人员 (B)", "源表": "Source B", "匹配字段": "出差人", "计算逻辑": "外键 (Join Key)"},
             {"所属表": "结果表3", "目标字段": "SPM (B)", "源表": "Source B", "匹配字段": "SPM", "计算逻辑": "外键 (Join Key)"},
-            {"所属表": "结果表3", "目标字段": "金额", "源表": "Source B", "匹配字段": "金额", "计算逻辑": "SUM聚合 (清洗数值)"},
+            {"所属表": "结果表3", "目标字段": "金额", "源表": "Source B", "匹配字段": "金额", "计算逻辑": "SUM聚合 (清洗)"},
             {"所属表": "结果表3", "目标字段": "费用类型", "源表": "Source B", "匹配字段": "产品类型", "计算逻辑": "分类依据 (补助/费控)"},
 
             # === 结果表 2 (结算) ===
@@ -178,7 +194,7 @@ class DataEngine:
         
         orphans = df_b[~df_b['key'].isin(df_a['key'])]
         for key in orphans['key'].unique():
-             errors.append({'类型':'逻辑错误', '来源':'Source B', '_sys_id':'-', '行号':'-', '信息':f'孤立费用，无法匹配: {key}'})
+             errors.append({'类型':'逻辑错误', '来源':'Source B', '_sys_id':'-', '行号':'-', '信息':f'孤立费用: {key}'})
 
         return errors, df_a, df_b
 
@@ -261,7 +277,7 @@ class DataEngine:
         return b.getvalue()
 
 # ==============================================================================
-# Zone B: UI 组件层 (View) - 采用 CSS Grid 布局
+# Zone B: UI 组件层 (View)
 # ==============================================================================
 class UIComponents:
     @staticmethod
@@ -305,44 +321,6 @@ class UIComponents:
             if c2.button("🛠️ 在线修复", type="primary", use_container_width=True): on_fix()
 
     @staticmethod
-    def render_mapping_table_header():
-        """渲染 Grid 表头"""
-        st.markdown("""
-        <div class="mapping-container">
-            <div class="map-header">
-                <div>目标字段</div>
-                <div>匹配字段</div>
-                <div>源表</div>
-                <div>逻辑说明</div>
-            </div>
-        """, unsafe_allow_html=True)
-
-    @staticmethod
-    def render_mapping_table_footer():
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    @staticmethod
-    def render_mapping_row(idx, row, is_edit, cols_a, cols_b):
-        """渲染 Grid 行 (含逻辑判断)"""
-        # 开始行容器
-        st.markdown('<div class="map-row">', unsafe_allow_html=True)
-        
-        # 1. 目标字段
-        st.markdown(f"<div><strong>{row['目标字段']}</strong></div>", unsafe_allow_html=True)
-        
-        # 2. 匹配字段 (复杂逻辑：编辑/只读)
-        # 注意：要在 Grid 布局中插入 Streamlit 组件(Selectbox)，我们需要临时跳出 HTML
-        # 但 Streamlit 组件默认是 Block 级。这里使用一个折中方案：
-        # 我们用 st.empty() 占位，或者直接利用 Markdown 渲染只读态
-        
-        # *修正*：为了在 CSS Grid 中嵌入 Selectbox，我们必须使用 st.columns 来模拟 Grid 的列宽。
-        # 既然如此，我们将 Python 层的 st.columns 与 CSS 结合。
-        # 上面的 CSS .map-row 已经定义了 grid-template-columns。
-        # 但 Streamlit 的 st.markdown 无法包含 st.selectbox。
-        # 所以必须把这个 render 函数改成纯 st.columns 布局，外层包 CSS 类。
-        pass # 逻辑转移到 Controller 循环中处理
-
-    @staticmethod
     def render_download_zone(result_files, result_zip):
         with st.container(border=True):
             st.success("✅ 生成完毕")
@@ -352,6 +330,56 @@ class UIComponents:
             if 't1' in result_files: c1.download_button("📥 表1: 工时统计", result_files['t1'], "t1.xlsx", use_container_width=True)
             if 't2' in result_files: c2.download_button("📥 表2: 结算汇总", result_files['t2'], "t2.xlsx", use_container_width=True)
             if 't3' in result_files: c3.download_button("📥 表3: 详细明细", result_files['t3'], "t3.xlsx", use_container_width=True)
+
+    @staticmethod
+    def render_tab_content(description, subset, is_edit, cols_a, cols_b):
+        # 1. 用途说明 (Info Bar)
+        st.markdown(f'<div class="info-bar">ℹ️ {description}</div>', unsafe_allow_html=True)
+        
+        # 2. 映射表 (CSS Grid)
+        st.markdown("""
+        <div class="mapping-container">
+            <div class="map-header">
+                <div>目标字段</div>
+                <div>匹配字段</div>
+                <div>源表</div>
+                <div>逻辑说明</div>
+            </div>
+        """, unsafe_allow_html=True)
+        
+        for idx, row in subset.iterrows():
+            is_result_source = row['源表'] == '结果表3'
+            
+            # 开启行容器
+            st.markdown('<div class="map-row">', unsafe_allow_html=True)
+            
+            # 使用 columns 布局内容以支持 Selectbox
+            c1, c2, c3, c4 = st.columns([2, 3, 1.5, 3.5])
+            
+            with c1:
+                st.markdown(f"<div style='font-weight:bold;'>{row['目标字段']}</div>", unsafe_allow_html=True)
+            
+            with c2:
+                if is_edit and not is_result_source:
+                    opts = cols_a if row['源表']=='Source A' else cols_b
+                    cur = row['匹配字段']
+                    if cur not in opts: opts = [cur] + opts
+                    new_val = st.selectbox("s", opts, index=opts.index(cur), key=f"s_{idx}", label_visibility="collapsed")
+                    st.session_state.mapping_config.at[idx, '匹配字段'] = new_val
+                else:
+                    color = "#a5d6ff" if not is_result_source else "#8b949e"
+                    st.markdown(f"<div style='font-family:monospace; color:{color};'>{row['匹配字段']}</div>", unsafe_allow_html=True)
+            
+            with c3:
+                tag_cls = 'tag-result' if is_result_source else 'tag-source'
+                st.markdown(f"<div><span class='source-tag {tag_cls}'>{row['源表']}</span></div>", unsafe_allow_html=True)
+            
+            with c4:
+                st.markdown(f"<div style='color:#666; font-size:0.85rem;'>{row['计算逻辑']}</div>", unsafe_allow_html=True)
+                
+            st.markdown('</div>', unsafe_allow_html=True) # close map-row
+            
+        st.markdown("</div>", unsafe_allow_html=True) # close mapping-container
 
 # ==============================================================================
 # Zone C: 控制层 (Controller)
@@ -512,86 +540,18 @@ elif st.session_state.page == 'mapping':
     df_c = st.session_state.mapping_config
     t1, t2, t3 = st.tabs(["结果表3 (底表)", "结果表2 (结算)", "结果表1 (工时)"])
     
-    # Grid 模拟渲染器
-    def render_grid_table(subset):
-        # Header
-        UIComponents.render_mapping_table_header()
-        
-        # Rows (使用 st.columns 在 CSS Grid 上层再套一层，确保对齐)
-        for idx, row in subset.iterrows():
-            # 使用 container wrapper
-            st.markdown('<div class="map-row">', unsafe_allow_html=True)
-            
-            # 使用 columns 布局内容 (必须与 CSS Grid 比例 2:3:1.5:3.5 大致对应)
-            # 由于 Streamlit columns 是百分比，CSS Grid 是 fr，这里需要微调
-            # 为了完美对齐，这里我们直接用 markdown 生成 html 结构，但 Selectbox 必须是 widget
-            
-            # 方案：拆分 HTML，在中间插入 Widget
-            # Col 1: 目标
-            st.markdown(f"<div><strong>{row['目标字段']}</strong></div>", unsafe_allow_html=True)
-            
-            # Col 2: 匹配 (Widget or Text)
-            # 注意：在 markdown 的 div 中插入 widget 是不可能的。
-            # 所以正确的做法是：这一行不使用纯 markdown 布局，而是使用 st.columns，
-            # 并在 CSS 中定义 st.columns 的行为。
-            # 但为了简单有效，我们退回到 st.columns 方案，但给 st.columns 的容器加样式
-            pass 
-
-    # 实际渲染逻辑 (修正版)
-    def render_tab_content(subset):
-        # 表头
-        st.markdown("""
-        <div class="mapping-container">
-            <div class="map-header">
-                <div>目标字段</div>
-                <div>匹配字段 (可编辑)</div>
-                <div>源表</div>
-                <div>逻辑说明</div>
-            </div>
-        """, unsafe_allow_html=True)
-        
-        # 关闭表头 div，开启数据行区域
-        
-        for idx, row in subset.iterrows():
-            # 每一行用 st.columns 布局，但背景色由 CSS 控制
-            # 我们用一个 container 包裹 columns 来应用 border-bottom 样式
-            # 或者是直接用 markdown 渲染 1,3,4 列，中间用 columns? 不行。
-            
-            # 最佳实践：完全放弃 HTML Table，用 st.columns + CSS 辅助类
-            # 每一行是一个 card
-            
-            is_result_source = row['源表'] == '结果表3'
-            
-            # 行容器 (Card Style)
-            st.markdown('<div style="border-bottom:1px solid #21262d; padding:8px 0;">', unsafe_allow_html=True)
-            
-            c1, c2, c3, c4 = st.columns([2, 3, 1.5, 3.5])
-            
-            with c1:
-                st.markdown(f"<div style='padding-top:10px; font-weight:bold; padding-left:10px;'>{row['目标字段']}</div>", unsafe_allow_html=True)
-            
-            with c2:
-                if st.session_state.is_editing_mapping and not is_result_source:
-                    opts = cols_a if row['源表']=='Source A' else cols_b
-                    cur = row['匹配字段']
-                    if cur not in opts: opts = [cur] + opts
-                    new_val = st.selectbox("s", opts, index=opts.index(cur), key=f"s_{idx}", label_visibility="collapsed")
-                    st.session_state.mapping_config.at[idx, '匹配字段'] = new_val
-                else:
-                    color = "#a5d6ff" if not is_result_source else "#8b949e"
-                    st.markdown(f"<div style='padding-top:10px; font-family:monospace; color:{color};'>{row['匹配字段']}</div>", unsafe_allow_html=True)
-            
-            with c3:
-                tag_cls = 'tag-result' if is_result_source else 'tag-source'
-                st.markdown(f"<div style='padding-top:8px;'><span class='source-tag {tag_cls}'>{row['源表']}</span></div>", unsafe_allow_html=True)
-            
-            with c4:
-                st.markdown(f"<div style='padding-top:10px; color:#666; font-size:0.85rem;'>{row['计算逻辑']}</div>", unsafe_allow_html=True)
-                
-            st.markdown('</div>', unsafe_allow_html=True)
-            
-        st.markdown("</div>", unsafe_allow_html=True) # End Container
-
-    with t1: render_tab_content(df_c[df_c['所属表']=='结果表3'])
-    with t2: render_tab_content(df_c[df_c['所属表']=='结果表2'])
-    with t3: render_tab_content(df_c[df_c['所属表']=='结果表1'])
+    with t1:
+        UIComponents.render_tab_content(
+            "全量明细底表：清洗、聚合 Source A/B 数据，并完成合并与金额计算。",
+            df_c[df_c['所属表']=='结果表3'], st.session_state.is_editing_mapping, cols_a, cols_b
+        )
+    with t2:
+        UIComponents.render_tab_content(
+            "结算汇总表：基于结果表3，按【销售公司+采购公司+采购部门】维度聚合总金额。",
+            df_c[df_c['所属表']=='结果表2'], st.session_state.is_editing_mapping, cols_a, cols_b
+        )
+    with t3:
+        UIComponents.render_tab_content(
+            "工时统计表：基于结果表3，按【人员】维度聚合总工时。",
+            df_c[df_c['所属表']=='结果表1'], st.session_state.is_editing_mapping, cols_a, cols_b
+        )
