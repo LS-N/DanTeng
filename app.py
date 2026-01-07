@@ -37,6 +37,11 @@ st.markdown("""
     }
     .cat-btn button:hover { border-color: #a371f7 !important; color: #a371f7 !important; transform: scale(1.02); }
 
+    /* 映射页样式 */
+    .map-row { background: #1c2128; padding: 10px; border-radius: 6px; margin-bottom: 8px; border: 1px solid #30363d; display: flex; align-items: center; }
+    .map-label { color: #8b949e; font-size: 0.85rem; width: 100px; }
+    .map-val { font-weight: bold; color: #c9d1d9; }
+    
     /* 隐藏默认上传组件 */
     div[data-testid="stFileUploader"] section > div:first-child { display: none; }
     div[data-testid="stFileUploader"] { padding-top: 15px; }
@@ -56,28 +61,33 @@ if 'is_calculated' not in st.session_state: st.session_state.is_calculated = Fal
 if 'result_zip' not in st.session_state: st.session_state.result_zip = None
 if 'error_report' not in st.session_state: st.session_state.error_report = None
 if 'block_auto_run' not in st.session_state: st.session_state.block_auto_run = False
+if 'is_editing_mapping' not in st.session_state: st.session_state.is_editing_mapping = False # 编辑模式锁
 
-# === 核心：初始化字段映射配置 ===
-# 这不再是死代码，而是可编辑的状态
+# === 核心：初始化字段映射配置 (带所属表标记) ===
 def init_mapping_config():
     if 'mapping_config' not in st.session_state:
-        # 默认配置数据
+        # 模板数据 (默认只读)
         data = [
-            # A表 关键字段
-            {"目标字段": "SPM", "来源": "Source A", "匹配字段": "SPM, 项目编号, 标识符, Project Code", "模糊匹配规则": "去除空格, 转字符串", "计算逻辑": "主键 (用于匹配)"},
-            {"目标字段": "工时", "来源": "Source A", "匹配字段": "工时, 交付工时, 投入工时, Hours", "模糊匹配规则": "转数值, 0填充", "计算逻辑": "SUM聚合, 不能为负"},
-            {"目标字段": "姓名", "来源": "Source A", "匹配字段": "姓名, 人员, 员工姓名, Name", "模糊匹配规则": "去除空格", "计算逻辑": "主键 (用于匹配)"},
-            # A表 维度字段
-            {"目标字段": "项目名称", "来源": "Source A", "匹配字段": "项目, 所属项目", "模糊匹配规则": "取第一个非空", "计算逻辑": "展示维度"},
-            {"目标字段": "人事范围", "来源": "Source A", "匹配字段": "人事范围", "模糊匹配规则": "取第一个非空", "计算逻辑": "展示维度 -> 对应表2销售公司"},
-            {"目标字段": "合同主体", "来源": "Source A", "匹配字段": "合同主体", "模糊匹配规则": "取第一个非空", "计算逻辑": "展示维度 -> 对应表2采购公司"},
-            {"目标字段": "销售部门", "来源": "Source A", "匹配字段": "销售部门, 部门", "模糊匹配规则": "取第一个非空", "计算逻辑": "展示维度 -> 对应表2采购部门"},
+            # --- 表1: 工时统计 ---
+            {"所属表": "表1", "目标字段": "人员", "来源": "Source A", "匹配字段": "姓名", "计算逻辑": "主键"},
+            {"所属表": "表1", "目标字段": "项目工时", "来源": "Source A", "匹配字段": "交付工时", "计算逻辑": "SUM聚合"},
             
-            # B表 关键字段
-            {"目标字段": "SPM", "来源": "Source B", "匹配字段": "SPM, 项目编号, 费用归属项目", "模糊匹配规则": "去除空格, 转字符串", "计算逻辑": "外键 (关联 A表)"},
-            {"目标字段": "金额", "来源": "Source B", "匹配字段": "金额, 报销金额, 总金额, 费用金额", "模糊匹配规则": "去逗号, 转数值", "计算逻辑": "SUM聚合, 拆分为补助/费控"},
-            {"目标字段": "姓名", "来源": "Source B", "匹配字段": "姓名, 报销人, 出差人, 申请人", "模糊匹配规则": "去除空格", "计算逻辑": "外键 (关联 A表)"},
-            {"目标字段": "费用类型", "来源": "Source B", "匹配字段": "产品类型, 费用类型", "模糊匹配规则": "包含关键字", "计算逻辑": "用于区分补助/费控"},
+            # --- 表2: 结算汇总 ---
+            {"所属表": "表2", "目标字段": "销售公司", "来源": "Source A", "匹配字段": "人事范围", "计算逻辑": "维度展示"},
+            {"所属表": "表2", "目标字段": "采购公司", "来源": "Source A", "匹配字段": "合同主体", "计算逻辑": "维度展示"},
+            {"所属表": "表2", "目标字段": "采购部门", "来源": "Source A", "匹配字段": "销售部门", "计算逻辑": "维度展示"},
+            
+            # --- 表3: 详细明细 (A表部分) ---
+            {"所属表": "表3", "目标字段": "SPM", "来源": "Source A", "匹配字段": "SPM", "计算逻辑": "主键 (匹配用)"},
+            {"所属表": "表3", "目标字段": "工时", "来源": "Source A", "匹配字段": "交付工时", "计算逻辑": "核心计算"},
+            {"所属表": "表3", "目标字段": "姓名", "来源": "Source A", "匹配字段": "姓名", "计算逻辑": "主键 (匹配用)"},
+            {"所属表": "表3", "目标字段": "项目名称", "来源": "Source A", "匹配字段": "所属项目", "计算逻辑": "维度"},
+            
+            # --- 表3: 详细明细 (B表部分) ---
+            {"所属表": "表3", "目标字段": "SPM (B)", "来源": "Source B", "匹配字段": "费用归属项目", "计算逻辑": "外键"},
+            {"所属表": "表3", "目标字段": "金额", "来源": "Source B", "匹配字段": "报销金额", "计算逻辑": "SUM"},
+            {"所属表": "表3", "目标字段": "姓名 (B)", "来源": "Source B", "匹配字段": "报销人", "计算逻辑": "外键"},
+            {"所属表": "表3", "目标字段": "费用类型", "来源": "Source B", "匹配字段": "费用类型", "计算逻辑": "分类"},
         ]
         st.session_state.mapping_config = pd.DataFrame(data)
 
@@ -93,7 +103,7 @@ def switch_page(page_name):
 def reset_system():
     st.session_state.clear()
     st.session_state.page = 'main'
-    init_mapping_config() # 重置时恢复默认配置
+    init_mapping_config()
     st.rerun()
 
 def load_file_content(file_obj, key):
@@ -119,25 +129,13 @@ def clear_file(key):
     st.session_state.block_auto_run = False
     st.rerun()
 
-# --- 核心：从配置中动态获取列名 ---
-def get_config_keys(source_name, target_field):
-    """
-    从 st.session_state.mapping_config 中查找用户配置的匹配字段
-    返回列表，例如 ['SPM', '项目编号']
-    """
+# --- 核心：从配置中动态获取列名 (单一值) ---
+def get_config_key(source_name, target_field):
     df_conf = st.session_state.mapping_config
-    # 筛选来源和目标
+    # 模糊查找目标字段 (防止表1/表2重复字段名干扰，优先匹配所属表，这里简化为全表搜)
     row = df_conf[(df_conf['来源'] == source_name) & (df_conf['目标字段'] == target_field)]
-    if row.empty:
-        return []
-    
-    # 获取字符串 "SPM, 项目编号" -> 转为列表
-    raw_str = row.iloc[0]['匹配字段']
-    if not raw_str or pd.isna(raw_str):
-        return []
-    
-    # 分割并去空格
-    return [x.strip() for x in str(raw_str).split(',') if x.strip()]
+    if row.empty: return None
+    return str(row.iloc[0]['匹配字段']).strip()
 
 # ==========================================
 # 3. 页面渲染逻辑
@@ -153,7 +151,7 @@ def render_main_page():
         
         st.markdown("<br>"*5, unsafe_allow_html=True)
         st.markdown('<div class="cat-btn">', unsafe_allow_html=True)
-        if st.button("🐱 字段映射 & 逻辑配置", help="自定义匹配规则"):
+        if st.button("🐱 字段映射配置", help="自定义匹配规则"):
             switch_page('mapping')
         st.markdown('</div>', unsafe_allow_html=True)
 
@@ -287,40 +285,47 @@ def render_main_page():
         df_b = st.session_state.data_store['B']['df']
         errors = []
 
-        # === 核心变化：使用动态配置查找列名 ===
-        def fc(df, src_name, target_field): 
-            keys = get_config_keys(src_name, target_field)
-            for k in keys: 
-                if k in df.columns: return k
-            return None
+        # === 核心：从配置表读取单个匹配列 ===
+        # 如果用户配置了多个(旧逻辑), 这里需要确保V7逻辑下我们只取一个
+        # 在 V7 逻辑中，get_config_key 返回的是单一字符串
         
-        # 使用 Source A / Source B 作为 key 查询配置
-        ca_spm = fc(df_a, 'Source A', 'SPM')
-        ca_hrs = fc(df_a, 'Source A', '工时')
-        ca_name = fc(df_a, 'Source A', '姓名')
+        ca_spm = get_config_key('Source A', 'SPM')
+        ca_hrs = get_config_key('Source A', '工时')
+        ca_name = get_config_key('Source A', '姓名')
         
-        cb_spm = fc(df_b, 'Source B', 'SPM')
-        cb_amt = fc(df_b, 'Source B', '金额')
-        cb_name = fc(df_b, 'Source B', '姓名')
+        cb_spm = get_config_key('Source B', 'SPM (B)')
+        cb_amt = get_config_key('Source B', '金额')
+        cb_name = get_config_key('Source B', '姓名 (B)')
 
-        # 辅助列
-        ca_proj = fc(df_a, 'Source A', '项目名称') or df_a.columns[0]
-        ca_range = fc(df_a, 'Source A', '人事范围') or df_a.columns[0]
-        ca_contract = fc(df_a, 'Source A', '合同主体') or df_a.columns[0]
-        ca_sales = fc(df_a, 'Source A', '销售部门') or df_a.columns[0] # 这里映射到销售部门
-        
-        cb_type = fc(df_b, 'Source B', '费用类型') or df_b.columns[0]
+        # 维度字段
+        ca_proj = get_config_key('Source A', '项目名称') or df_a.columns[0]
+        ca_range = get_config_key('Source A', '人事范围') or df_a.columns[0]
+        ca_contract = get_config_key('Source A', '合同主体') or df_a.columns[0]
+        ca_sales = get_config_key('Source A', '销售部门') or df_a.columns[0]
+        cb_type = get_config_key('Source B', '费用类型') or df_b.columns[0]
 
         def add_err(etype, src, rid, msg):
             errors.append({'类型': etype, '来源': src, '_sys_id': rid, '行号': rid if isinstance(rid, int) else '-', '信息': msg})
 
         # 1. 缺列检查
-        if not all([ca_spm, ca_hrs, ca_name]): 
-            add_err('逻辑错误', 'Source A', '-', f'缺少列: SPM/工时/姓名. 请检查配置页的【匹配字段】设置。')
-        if not all([cb_spm, cb_amt, cb_name]): 
-            add_err('逻辑错误', 'Source B', '-', f'缺少列: SPM/金额/姓名. 请检查配置页的【匹配字段】设置。')
+        def check_col(df, col, src, target_name):
+            if col not in df.columns:
+                add_err('逻辑错误', src, '-', f'未找到列[{col}] (对应目标:{target_name})。请去配置页检查。')
+                return False
+            return True
+
+        if check_col(df_a, ca_spm, 'Source A', 'SPM') and \
+           check_col(df_a, ca_hrs, 'Source A', '工时') and \
+           check_col(df_a, ca_name, 'Source A', '姓名'):
+           pass
+        
+        if check_col(df_b, cb_spm, 'Source B', 'SPM') and \
+           check_col(df_b, cb_amt, 'Source B', '金额') and \
+           check_col(df_b, cb_name, 'Source B', '姓名'):
+           pass
 
         if not errors:
+            # 预处理
             df_a[ca_hrs] = pd.to_numeric(df_a[ca_hrs], errors='coerce').fillna(0)
             if df_b[cb_amt].dtype == object: df_b[cb_amt] = df_b[cb_amt].astype(str).str.replace(',', '')
             df_b[cb_amt] = pd.to_numeric(df_b[cb_amt], errors='coerce').fillna(0)
@@ -423,51 +428,96 @@ def render_main_page():
 # --- 页面 B: 逻辑映射页 (猫猫按钮进入) ---
 def render_mapping_page():
     st.markdown("### 🐱 字段映射 & 逻辑配置")
-    st.caption("在此自定义系统的匹配逻辑。修改后点击保存，系统将使用新规则重新计算。")
     
-    col1, col2 = st.columns([1, 5])
+    col1, col2 = st.columns([1, 4])
     with col1:
         if st.button("⬅️ 返回主页", use_container_width=True): switch_page('main')
     
+    # 状态栏: 编辑模式切换
+    with col2:
+        c_status, c_edit = st.columns([3, 1])
+        with c_edit:
+            # 只有当文件都上传了，才允许进入编辑模式
+            has_files = st.session_state.data_store['A']['df'] is not None and st.session_state.data_store['B']['df'] is not None
+            
+            if not st.session_state.is_editing_mapping:
+                if st.button("✏️ 编辑配置", type="primary", use_container_width=True):
+                    if not has_files:
+                        st.toast("⚠️ 请先在主页上传 A/B 表，以便系统获取真实列名。", icon="🚫")
+                    else:
+                        st.session_state.is_editing_mapping = True
+                        st.rerun()
+            else:
+                if st.button("💾 保存生效", type="primary", use_container_width=True):
+                    st.session_state.is_editing_mapping = False
+                    st.session_state.is_calculated = False # 强制重算
+                    st.session_state.block_auto_run = False
+                    st.session_state.error_report = None
+                    st.success("配置已更新！")
+                    time.sleep(0.5)
+                    st.rerun()
+
     st.divider()
     
-    # 核心：可编辑的 Dataframe
-    # 获取当前配置
-    df_config = st.session_state.mapping_config
+    # 获取真实列名作为下拉选项
+    cols_a = list(st.session_state.data_store['A']['df'].columns) if st.session_state.data_store['A']['df'] is not None else []
+    cols_b = list(st.session_state.data_store['B']['df'].columns) if st.session_state.data_store['B']['df'] is not None else []
+
+    df_conf = st.session_state.mapping_config
     
-    # 使用 st.data_editor 让用户修改
-    # 重点：允许修改 '匹配字段' 列
-    edited_df = st.data_editor(
-        df_config,
-        column_config={
-            "目标字段": st.column_config.TextColumn("目标字段", disabled=True),
-            "来源": st.column_config.TextColumn("来源表", disabled=True),
-            "匹配字段": st.column_config.TextColumn(
-                "匹配列名 (支持多值)",
-                help="输入Excel中的列名，多个用逗号分隔。例如: 项目编号, SPM",
-                required=True
-            ),
-            "模糊匹配规则": st.column_config.TextColumn("模糊规则", disabled=True),
-            "计算逻辑": st.column_config.TextColumn("计算逻辑", disabled=True),
-        },
-        use_container_width=True,
-        hide_index=True,
-        num_rows="fixed" # 禁止增加删除行，只许改内容
-    )
+    # 分 Tab 展示
+    tab1, tab2, tab3 = st.tabs(["表1: 工时统计", "表2: 结算汇总", "表3: 详细明细"])
     
-    st.markdown("---")
-    c_save, c_void = st.columns([1, 4])
-    with c_save:
-        if st.button("💾 保存配置", type="primary", use_container_width=True):
-            st.session_state.mapping_config = edited_df
-            # 清除之前的错误，让系统有机会用新规则重试
-            st.session_state.error_report = None
-            st.session_state.block_auto_run = False
-            # 强制重算
-            st.session_state.is_calculated = False
-            st.success("✅ 配置已保存！")
-            time.sleep(1)
-            switch_page('main')
+    # 渲染器
+    def render_table_config(table_name):
+        subset = df_conf[df_conf['所属表'] == table_name]
+        
+        for idx, row in subset.iterrows():
+            # 获取当前行的索引，用于更新
+            real_idx = idx
+            
+            if not st.session_state.is_editing_mapping:
+                # 只读模式
+                st.markdown(f"""
+                <div class="map-row">
+                    <div class="map-label">{row['目标字段']}</div>
+                    <div style="flex:1; font-family:monospace; color:#a5d6ff;">{row['匹配字段']}</div>
+                    <div style="font-size:0.8rem; color:#666; width:100px;">{row['来源']}</div>
+                    <div style="font-size:0.8rem; color:#238636; width:150px;">{row['计算逻辑']}</div>
+                </div>
+                """, unsafe_allow_html=True)
+            else:
+                # 编辑模式
+                c1, c2, c3, c4 = st.columns([2, 3, 2, 2])
+                c1.markdown(f"**{row['目标字段']}**")
+                
+                # 下拉菜单：根据来源动态选择列名列表
+                options = cols_a if row['来源'] == 'Source A' else cols_b
+                current_val = row['匹配字段']
+                
+                # 防止当前值不在选项中导致报错 (容错)
+                index_val = 0
+                if current_val in options:
+                    index_val = options.index(current_val)
+                
+                new_val = c2.selectbox(
+                    "匹配列", 
+                    options=options, 
+                    index=index_val, 
+                    key=f"sel_{real_idx}", 
+                    label_visibility="collapsed"
+                )
+                
+                # 实时更新 session state
+                st.session_state.mapping_config.at[real_idx, '匹配字段'] = new_val
+                
+                c3.caption(f"来源: {row['来源']}")
+                c4.caption(f"逻辑: {row['计算逻辑']}")
+                st.divider()
+
+    with tab1: render_table_config("表1")
+    with tab2: render_table_config("表2")
+    with tab3: render_table_config("表3")
 
 # ==========================================
 # 4. 路由控制
