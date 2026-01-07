@@ -16,7 +16,7 @@ def inject_css():
         .stApp { background-color: var(--bg-color); color: var(--text); }
         
         /* [UI] 顶部导航 */
-        .nav-header { font-size: 1.2rem; font-weight: bold; display:flex; align-items:center; height: 100%; }
+        .nav-header { font-size: 1.2rem; font-weight: bold; margin-bottom: 10px; display:flex; align-items:center; height: 100%; }
         
         /* [UI] 说明条 */
         .info-bar {
@@ -24,56 +24,58 @@ def inject_css():
             border-left: 4px solid #58a6ff;
             color: #c9d1d9;
             padding: 8px 15px;
-            margin-bottom: 10px;
+            margin-bottom: 20px;
             font-size: 0.9rem;
             border-radius: 4px;
         }
 
-        /* [关键] 强制表格居中对齐 */
-        div[data-testid="stDataFrame"] th { text-align: center !important; }
-        div[data-testid="stDataFrame"] td { text-align: center !important; }
+        /* [UI] 强制 data_editor 表头背景色 */
+        div[data-testid="stDataFrame"] div[class^="stDataFrame"] {
+            border: 1px solid #30363d;
+        }
         
-        /* [关键] 调整Selectbox在表格中的样式 */
-        div[data-testid="stDataFrame"] select { text-align: center; }
-
-        /* 隐藏上传组件默认列表 */
+        /* 隐藏 Streamlit 默认组件杂项 */
         div[data-testid="stFileUploader"] section > div:first-child { display: none; }
         div[data-testid="stFileUploader"] { padding-top: 15px; }
     </style>
     """, unsafe_allow_html=True)
 
 # ==============================================================================
-# Zone A: 纯逻辑层 (DataEngine)
+# Zone A: 纯逻辑层 (DataEngine) - V10.0 内核
 # ==============================================================================
 class DataEngine:
     @staticmethod
     def get_default_config():
-        # 注意：这里只定义数据，列顺序在渲染时控制
+        """
+        定义字段映射默认配置 (模板)
+        严格补全所有 '源表' 字段，确保无空值
+        """
         return pd.DataFrame([
             # === 结果表 3 (底表) ===
-            {"所属表": "结果表3", "目标字段": "人员", "源表": "Source A", "匹配字段": "人员", "逻辑说明": "主键 (Join Key)"},
-            {"所属表": "结果表3", "目标字段": "SPM", "源表": "Source A", "匹配字段": "SPM", "逻辑说明": "主键 (Join Key)"},
-            {"所属表": "结果表3", "目标字段": "耗时(小时)", "源表": "Source A", "匹配字段": "交付工时", "逻辑说明": "SUM聚合 (清洗)"},
-            {"所属表": "结果表3", "目标字段": "所属项目", "源表": "Source A", "匹配字段": "项目", "逻辑说明": "维度 (First)"},
-            {"所属表": "结果表3", "目标字段": "人事范围", "源表": "Source A", "匹配字段": "人事范围", "逻辑说明": "维度 (->销售公司)"},
-            {"所属表": "结果表3", "目标字段": "合同主体", "源表": "Source A", "匹配字段": "合同主体", "逻辑说明": "维度 (->采购公司)"},
-            {"所属表": "结果表3", "目标字段": "销售人员", "源表": "Source A", "匹配字段": "销售", "逻辑说明": "维度 (First)"},
-            {"所属表": "结果表3", "目标字段": "销售部门", "源表": "Source A", "匹配字段": "销售部门", "逻辑说明": "维度 (->采购部门)"},
-            {"所属表": "结果表3", "目标字段": "人员 (B)", "源表": "Source B", "匹配字段": "出差人", "逻辑说明": "外键 (Join Key)"},
-            {"所属表": "结果表3", "目标字段": "SPM (B)", "源表": "Source B", "匹配字段": "SPM", "逻辑说明": "外键 (Join Key)"},
-            {"所属表": "结果表3", "目标字段": "金额", "源表": "Source B", "匹配字段": "金额", "逻辑说明": "SUM聚合 (清洗)"},
-            {"所属表": "结果表3", "目标字段": "费用类型", "源表": "Source B", "匹配字段": "产品类型", "逻辑说明": "分类依据 (补助/费控)"},
+            {"所属表": "结果表3", "序号": 1, "目标字段": "人员", "源表": "Source A", "匹配字段": "人员", "逻辑说明": "主键 (Join Key)"},
+            {"所属表": "结果表3", "序号": 2, "目标字段": "SPM", "源表": "Source A", "匹配字段": "SPM", "逻辑说明": "主键 (Join Key)"},
+            {"所属表": "结果表3", "序号": 3, "目标字段": "耗时(小时)", "源表": "Source A", "匹配字段": "交付工时", "逻辑说明": "SUM聚合 (清洗)"},
+            {"所属表": "结果表3", "序号": 4, "目标字段": "所属项目", "源表": "Source A", "匹配字段": "项目", "逻辑说明": "维度 (First)"},
+            {"所属表": "结果表3", "序号": 5, "目标字段": "人事范围", "源表": "Source A", "匹配字段": "人事范围", "逻辑说明": "维度 (->销售公司)"},
+            {"所属表": "结果表3", "序号": 6, "目标字段": "合同主体", "源表": "Source A", "匹配字段": "合同主体", "逻辑说明": "维度 (->采购公司)"},
+            {"所属表": "结果表3", "序号": 7, "目标字段": "销售人员", "源表": "Source A", "匹配字段": "销售", "逻辑说明": "维度 (First)"},
+            {"所属表": "结果表3", "序号": 8, "目标字段": "销售部门", "源表": "Source A", "匹配字段": "销售部门", "逻辑说明": "维度 (->采购部门)"},
+            {"所属表": "结果表3", "序号": 9, "目标字段": "人员 (B)", "源表": "Source B", "匹配字段": "出差人", "逻辑说明": "外键 (Join Key)"},
+            {"所属表": "结果表3", "序号": 10, "目标字段": "SPM (B)", "源表": "Source B", "匹配字段": "SPM", "逻辑说明": "外键 (Join Key)"},
+            {"所属表": "结果表3", "序号": 11, "目标字段": "金额", "源表": "Source B", "匹配字段": "金额", "逻辑说明": "SUM聚合 (清洗)"},
+            {"所属表": "结果表3", "序号": 12, "目标字段": "费用类型", "源表": "Source B", "匹配字段": "产品类型", "逻辑说明": "分类依据 (补助/费控)"},
 
             # === 结果表 2 (结算) ===
-            {"所属表": "结果表2", "目标字段": "销售公司", "源表": "结果表3", "匹配字段": "人事范围", "逻辑说明": "维度分组"},
-            {"所属表": "结果表2", "目标字段": "采购公司", "源表": "结果表3", "匹配字段": "合同主体", "逻辑说明": "维度分组"},
-            {"所属表": "结果表2", "目标字段": "采购部门", "源表": "结果表3", "匹配字段": "销售部门", "逻辑说明": "维度分组"},
-            {"所属表": "结果表2", "目标字段": "金额", "源表": "结果表3", "匹配字段": "结算费用合计", "逻辑说明": "SUM聚合"},
-            {"所属表": "结果表2", "目标字段": "工作量", "源表": "结果表3", "匹配字段": "支持时间(人天)", "逻辑说明": "SUM聚合"},
+            # 注意：这里的源表全部指向 '结果表3'，属于系统内部逻辑
+            {"所属表": "结果表2", "序号": 1, "目标字段": "销售公司", "源表": "结果表3", "匹配字段": "人事范围", "逻辑说明": "维度分组"},
+            {"所属表": "结果表2", "序号": 2, "目标字段": "采购公司", "源表": "结果表3", "匹配字段": "合同主体", "逻辑说明": "维度分组"},
+            {"所属表": "结果表2", "序号": 3, "目标字段": "采购部门", "源表": "结果表3", "匹配字段": "销售部门", "逻辑说明": "维度分组"},
+            {"所属表": "结果表2", "序号": 4, "目标字段": "金额", "源表": "结果表3", "匹配字段": "结算费用合计", "逻辑说明": "SUM聚合"},
+            {"所属表": "结果表2", "序号": 5, "目标字段": "工作量", "源表": "结果表3", "匹配字段": "支持时间(人天)", "逻辑说明": "SUM聚合"},
 
             # === 结果表 1 (工时) ===
-            {"所属表": "结果表1", "目标字段": "人员", "源表": "结果表3", "匹配字段": "人员", "逻辑说明": "维度分组"},
-            {"所属表": "结果表1", "目标字段": "项目工时", "源表": "结果表3", "匹配字段": "耗时(小时)", "逻辑说明": "SUM聚合"},
+            {"所属表": "结果表1", "序号": 1, "目标字段": "人员", "源表": "结果表3", "匹配字段": "人员", "逻辑说明": "维度分组"},
+            {"所属表": "结果表1", "序号": 2, "目标字段": "项目工时", "源表": "结果表3", "匹配字段": "耗时(小时)", "逻辑说明": "SUM聚合"},
         ])
 
     @staticmethod
@@ -113,18 +115,43 @@ class DataEngine:
         
         if not (valid_a and valid_b): return errors, df_a, df_b
 
-        # 简化版校验，只做核心检查
+        df_a_clean = df_a.copy()
+        df_b_clean = df_b.copy()
+        df_a_clean[map_a['耗时']] = DataEngine.clean_num(df_a_clean, map_a['耗时'])
+        df_b_clean[map_b['金额']] = DataEngine.clean_num(df_b_clean, map_b['金额'])
+
+        for i, r in df_a_clean[df_a_clean[map_a['耗时']] < 0].iterrows():
+            errors.append({'类型':'数据错误', '来源':'Source A', '_sys_id':r['_sys_id'], '行号':r['_sys_id'], '信息':'工时为负'})
+        for i, r in df_a[df_a[map_a['SPM']].isnull() | (df_a[map_a['SPM']] == '')].iterrows():
+             errors.append({'类型':'数据错误', '来源':'Source A', '_sys_id':r['_sys_id'], '行号':r['_sys_id'], '信息':'SPM为空'})
+        for i, r in df_b_clean[df_b_clean[map_b['金额']] < 0].iterrows():
+            errors.append({'类型':'数据错误', '来源':'Source B', '_sys_id':r['_sys_id'], '行号':r['_sys_id'], '信息':'金额为负'})
+
+        agg = df_a_clean.groupby(map_a['人员'])[map_a['耗时']].sum()
+        for n, h in agg.items():
+            if h < min_hours:
+                 errors.append({'类型':'逻辑错误', '来源':'Source A', '_sys_id':'-', '行号':'-', '信息':f'人员[{n}]总工时({h}) < 阈值'})
+        
+        df_a['key'] = df_a[map_a['人员']].astype(str) + "_" + df_a[map_a['SPM']].astype(str)
+        df_b['key'] = df_b[map_b['人员']].astype(str) + "_" + df_b[map_b['SPM']].astype(str)
+        
+        orphans = df_b[~df_b['key'].isin(df_a['key'])]
+        for key in orphans['key'].unique():
+             errors.append({'类型':'逻辑错误', '来源':'Source B', '_sys_id':'-', '行号':'-', '信息':f'孤立费用: {key}'})
+
         return errors, df_a, df_b
 
     @staticmethod
     def calculate(df_a, df_b, config_df, price_per_day, subsidy_tag):
-        # ... (计算逻辑保持不变，为节省篇幅略去细节，逻辑核心同V10) ...
-        # 这里直接复用之前的计算逻辑，确保核心正确性
         c = lambda t, s: DataEngine.get_col(config_df, t, s)
+        
         col_a_user = c('人员', 'Source A')
         col_a_spm = c('SPM', 'Source A')
         col_a_hrs = c('耗时(小时)', 'Source A')
-        dims = {'project': c('所属项目', 'Source A'), 'range': c('人事范围', 'Source A'), 'contract': c('合同主体', 'Source A'), 'sales': c('销售人员', 'Source A'), 'dept': c('销售部门', 'Source A')}
+        dims = {
+            'project': c('所属项目', 'Source A'), 'range': c('人事范围', 'Source A'), 'contract': c('合同主体', 'Source A'),
+            'sales': c('销售人员', 'Source A'), 'dept': c('销售部门', 'Source A')
+        }
         col_b_user = c('人员 (B)', 'Source B')
         col_b_spm = c('SPM (B)', 'Source B')
         col_b_amt = c('金额', 'Source B')
@@ -134,7 +161,7 @@ class DataEngine:
         df_b[col_b_amt] = DataEngine.clean_num(df_b, col_b_amt)
 
         agg_rules = {col_a_hrs: 'sum'}
-        for _, col in dims.items(): 
+        for _, col in dims.items():
             if col: agg_rules[col] = 'first'
         df_a_gp = df_a.groupby([col_a_user, col_a_spm], as_index=False).agg(agg_rules)
 
@@ -155,26 +182,33 @@ class DataEngine:
         res['人力费用'] = res['支持时间(人天)'] * price_per_day
         res['结算费用合计'] = res['人力费用'] + res['差旅补助'] + res['差旅费控平台']
 
-        rename_map = {col_a_user: '人员', dims['project']: '所属项目', dims['range']: '人事范围', col_a_spm: 'SPM', dims['contract']: '合同主体', dims['sales']: '销售人员', dims['dept']: '销售部门', col_a_hrs: '耗时(小时)'}
+        rename_map = {
+            col_a_user: '人员', dims['project']: '所属项目', dims['range']: '人事范围',
+            col_a_spm: 'SPM', dims['contract']: '合同主体', dims['sales']: '销售人员',
+            dims['dept']: '销售部门', col_a_hrs: '耗时(小时)'
+        }
         rename_map = {k:v for k,v in rename_map.items() if k in res.columns}
         t3 = res.rename(columns=rename_map)
         
-        final_cols = ['序号','人员','所属项目','人事范围','SPM','合同主体','销售人员','销售部门','差旅补助','差旅费控平台','耗时(小时)','支持时间(人天)','人力费用','结算费用合计']
+        final_cols = ['序号','人员','所属项目','人事范围','SPM','合同主体','销售人员','销售部门',
+                      '差旅补助','差旅费控平台','耗时(小时)','支持时间(人天)','人力费用','结算费用合计']
         t3.insert(0, '序号', range(1, len(t3)+1))
         t3 = t3[[c for c in final_cols if c in t3.columns]]
 
         dims_t2 = ['人事范围', '合同主体', '销售部门']
-        t2 = pd.DataFrame()
         if all(c in t3.columns for c in dims_t2):
             t2 = t3.groupby(dims_t2).agg({'结算费用合计': 'sum', '支持时间(人天)': 'sum'}).reset_index()
             t2.columns = ['销售公司', '采购公司', '采购部门', '金额(含税,单位:元)', '工作量(人天)']
             t2.insert(0, '序号', range(1, len(t2)+1))
-        
-        t1 = pd.DataFrame()
+        else:
+            t2 = pd.DataFrame({'提示': ['缺少维度字段']})
+
         if '人员' in t3.columns and '耗时(小时)' in t3.columns:
             t1 = t3.groupby('人员')['耗时(小时)'].sum().reset_index()
             t1.rename(columns={'耗时(小时)': '项目工时'}, inplace=True)
             t1.insert(0, '序号', range(1, len(t1)+1))
+        else:
+            t1 = pd.DataFrame({'提示': ['缺少人员字段']})
 
         return {'t1': t1, 't2': t2, 't3': t3}
 
@@ -212,7 +246,7 @@ class UIComponents:
                 return st.file_uploader(title, type=['xlsx', 'csv'], key=f"uploader_{key}", label_visibility="collapsed")
             else:
                 c1, c2 = st.columns([9, 1])
-                c1.markdown(f"<div class='file-card-styled'><div><div style='font-size:0.8rem; color:#8b949e;'>{title.split(':')[0]}</div><div style='font-weight:bold; color:#fff;'>📄 {data['name']}</div><div style='font-size:0.8rem; color:#238636;'>✓ {len(data['df'])} 行</div></div></div>", unsafe_allow_html=True)
+                c1.markdown(f"<div style='background:#21262d; border-left:4px solid #238636; padding:15px; border-radius:4px;'>📄 {data['name']}</div>", unsafe_allow_html=True)
                 if c2.button("Del", key=f"del_{key}"): return "DELETE"
         return None
 
@@ -237,6 +271,99 @@ class UIComponents:
             if 't1' in result_files: c1.download_button("📥 表1: 工时统计", result_files['t1'], "t1.xlsx", use_container_width=True)
             if 't2' in result_files: c2.download_button("📥 表2: 结算汇总", result_files['t2'], "t2.xlsx", use_container_width=True)
             if 't3' in result_files: c3.download_button("📥 表3: 详细明细", result_files['t3'], "t3.xlsx", use_container_width=True)
+
+    @staticmethod
+    def render_native_editor(desc, subset, is_edit, cols_a, cols_b):
+        """
+        渲染原生表格 (Native Table)
+        - 强制包含四列：序号, 目标字段, 源表, 匹配字段, 逻辑说明
+        - 严格控制可编辑性
+        """
+        st.markdown(f'<div class="info-bar">ℹ️ {desc}</div>', unsafe_allow_html=True)
+        
+        # 1. 准备数据副本
+        df_display = subset[['序号', '目标字段', '源表', '匹配字段', '逻辑说明']].copy().reset_index(drop=True)
+        
+        # 2. 样式: 结果表来源的行置灰 (Visual Only)
+        def highlight_readonly(row):
+            if '结果表' in str(row['源表']):
+                return ['background-color: #21262d; color: #666'] * len(row)
+            return [''] * len(row)
+        
+        styled_df = df_display.style.apply(highlight_readonly, axis=1)
+
+        # 3. 列配置 (Column Config)
+        column_config = {
+            "序号": st.column_config.NumberColumn("序号", width="small", disabled=True),
+            "目标字段": st.column_config.TextColumn("目标字段", disabled=True, width="medium"),
+            "逻辑说明": st.column_config.TextColumn("逻辑说明", disabled=True, width="large"),
+        }
+
+        # 4. 动态配置可编辑列 (源表 & 匹配字段)
+        if is_edit:
+            # 源表下拉框 (不允许为空)
+            column_config["源表"] = st.column_config.SelectboxColumn(
+                "源表", 
+                options=["Source A", "Source B"], 
+                width="small",
+                required=True
+            )
+            # 匹配字段下拉框 (不允许为空) - 这里为了体验，合并所有可能的列
+            # 实际上我们会根据行选的源表来校验，但在UI上提供全集更方便
+            column_config["匹配字段"] = st.column_config.SelectboxColumn(
+                "匹配字段",
+                options=cols_a + cols_b,
+                width="medium",
+                required=True
+            )
+        else:
+            # 非编辑模式全只读
+            column_config["源表"] = st.column_config.TextColumn("源表", disabled=True)
+            column_config["匹配字段"] = st.column_config.TextColumn("匹配字段", disabled=True)
+
+        # 5. 渲染表格
+        # 注意: 这里的 disabled 参数主要控制整表，但我们主要靠 column_config 控制列
+        # 对于结果表行，虽然这里配置了 selectbox，但我们会在回调逻辑里重置它的修改
+        edited = st.data_editor(
+            styled_df,
+            column_config=column_config,
+            use_container_width=True,
+            hide_index=True,
+            disabled=not is_edit, 
+            key=f"editor_{subset.iloc[0]['所属表']}",
+            height=35 * (len(df_display) + 1) + 20 # 动态高度计算：行高*行数 + 表头冗余
+        )
+
+        # 6. 后端逻辑封堵 (Logic Gate)
+        if is_edit:
+            for i, row in edited.iterrows():
+                orig_idx = subset.index[i]
+                orig_row = st.session_state.mapping_config.loc[orig_idx]
+                
+                # 规则1: 如果原始源表是 '结果表X'，严禁修改任何内容
+                if '结果表' in orig_row['源表']:
+                    continue # 跳过回写，相当于前端改了也没用
+                
+                # 规则2: 源表变更 -> 自动匹配
+                if row['源表'] != orig_row['源表']:
+                    st.session_state.mapping_config.at[orig_idx, '源表'] = row['源表']
+                    # 尝试在新源表中找同名字段 (简单自动映射)
+                    target_opts = cols_a if row['源表'] == 'Source A' else cols_b
+                    # 如果当前匹配字段在新表里也有，保留；否则置为 None (前端会变红或空)
+                    # 这里为了防止报错，我们暂且保留原值，让用户自己去改，或者设为第一个
+                    if row['匹配字段'] not in target_opts:
+                        # 尝试智能查找目标字段名
+                        if row['目标字段'] in target_opts:
+                            st.session_state.mapping_config.at[orig_idx, '匹配字段'] = row['目标字段']
+                        else:
+                            st.session_state.mapping_config.at[orig_idx, '匹配字段'] = target_opts[0] if target_opts else None
+                
+                # 规则3: 匹配字段变更 (且源表正确)
+                elif row['匹配字段'] != orig_row['匹配字段']:
+                    # 校验字段是否属于当前源表
+                    valid_opts = cols_a if row['源表'] == 'Source A' else cols_b
+                    if row['匹配字段'] in valid_opts:
+                        st.session_state.mapping_config.at[orig_idx, '匹配字段'] = row['匹配字段']
 
 # ==============================================================================
 # Zone C: 控制层 (Controller)
@@ -366,7 +493,7 @@ if st.session_state.page == 'main':
                 st.rerun()
 
 elif st.session_state.page == 'mapping':
-    # 1. 顶部导航 (Title + Return)
+    # 1. 顶部导航
     c1, c2 = st.columns([9, 1])
     c1.markdown("<div class='nav-header'>🐱 字段映射 & 逻辑配置</div>", unsafe_allow_html=True)
     if c2.button("⬅️", use_container_width=True, help="返回主页"): 
@@ -400,76 +527,22 @@ elif st.session_state.page == 'mapping':
     df_c = st.session_state.mapping_config
     t1, t2, t3 = st.tabs(["结果表3 (底表)", "结果表2 (结算)", "结果表1 (工时)"])
     
-    # 准备列名 (A表列 + B表列)
-    cols_all = []
-    if has_files:
-        cols_all = list(st.session_state.data_store['A']['df'].columns) + list(st.session_state.data_store['B']['df'].columns)
+    cols_a = list(st.session_state.data_store['A']['df'].columns) if has_files else []
+    cols_b = list(st.session_state.data_store['B']['df'].columns) if has_files else []
 
-    # 4. 内容渲染 (Native Data Editor)
-    def render_native_editor(desc, subset):
-        st.markdown(f'<div class="info-bar">ℹ️ {desc}</div>', unsafe_allow_html=True)
-        
-        # 准备显示数据
-        display_df = subset[['目标字段', '源表', '匹配字段', '逻辑说明']].reset_index(drop=True)
-        
-        # 样式调整：结果表来源的行置灰 (通过 Pandas Styler)
-        def highlight_readonly(row):
-            if '结果表' in str(row['源表']):
-                return ['background-color: #21262d; color: #666'] * len(row)
-            return [''] * len(row)
-        
-        styled_df = display_df.style.apply(highlight_readonly, axis=1)
-
-        # 列配置
-        col_config = {
-            "目标字段": st.column_config.TextColumn("目标字段", disabled=True, width="medium"),
-            "源表": st.column_config.SelectboxColumn("源表", options=["Source A", "Source B"], disabled=not st.session_state.is_editing_mapping, width="small"),
-            "匹配字段": st.column_config.SelectboxColumn("匹配字段", options=cols_all, disabled=not st.session_state.is_editing_mapping, width="medium"),
-            "逻辑说明": st.column_config.TextColumn("逻辑说明", disabled=True, width="large"),
-        }
-
-        # 渲染
-        edited = st.data_editor(
-            styled_df,
-            column_config=col_config,
-            use_container_width=True,
-            hide_index=True,
-            key=f"editor_{subset.iloc[0]['所属表']}",
-            num_rows="fixed"
-        )
-
-        # 自动映射逻辑 + 保存逻辑
-        if st.session_state.is_editing_mapping:
-            # 比较差异
-            for i, row in edited.iterrows():
-                orig_idx = subset.index[i]
-                orig_row = st.session_state.mapping_config.loc[orig_idx]
-                
-                # 1. 如果源表变了 -> 自动尝试去新源表找同名字段
-                if row['源表'] != orig_row['源表']:
-                    st.session_state.mapping_config.at[orig_idx, '源表'] = row['源表']
-                    # 尝试自动匹配
-                    target_col = row['匹配字段'] # 拿当前选的字段名去碰运气
-                    if target_col not in cols_all: # 如果当前字段不在总表里(基本不可能)，或者为了严谨
-                        # 这里更智能的是：拿着'目标字段'去碰运气
-                        pass # 保持原样，让用户自己选，或者标红(data_editor无法动态标红)
-                
-                # 2. 如果匹配字段变了
-                if row['匹配字段'] != orig_row['匹配字段']:
-                    st.session_state.mapping_config.at[orig_idx, '匹配字段'] = row['匹配字段']
-
+    # 4. 内容渲染
     with t1:
-        render_native_editor(
+        UIComponents.render_native_editor(
             "全量明细底表：基于 Source A/B 进行清洗、聚合、关联计算后的宽表。",
-            df_c[df_c['所属表']=='结果表3']
+            df_c[df_c['所属表']=='结果表3'], st.session_state.is_editing_mapping, cols_a, cols_b
         )
     with t2:
-        render_native_editor(
+        UIComponents.render_native_editor(
             "结算汇总表：基于【结果表3】按公司/部门维度二次聚合的金额数据。",
-            df_c[df_c['所属表']=='结果表2']
+            df_c[df_c['所属表']=='结果表2'], st.session_state.is_editing_mapping, cols_a, cols_b
         )
     with t3:
-        render_native_editor(
+        UIComponents.render_native_editor(
             "工时统计表：基于【结果表3】按人员维度二次聚合的工时数据。",
-            df_c[df_c['所属表']=='结果表1']
+            df_c[df_c['所属表']=='结果表1'], st.session_state.is_editing_mapping, cols_a, cols_b
         )
