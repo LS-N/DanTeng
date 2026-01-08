@@ -127,7 +127,6 @@ class DataEngine:
 
         df_a[col_a_hrs] = DataEngine.clean_num(df_a, col_a_hrs)
         df_b[col_b_amt] = DataEngine.clean_num(df_b, col_b_amt)
-        # 核心逻辑：万元转元
         df_b[col_b_amt] = (df_b[col_b_amt] * 10000).round(2)
 
         if col_b_user and col_b_user in df_b.columns:
@@ -183,7 +182,7 @@ class DataEngine:
     def to_bytes(df):
         b = io.BytesIO()
         out = df.drop(columns=['_sys_id'], errors='ignore')
-        # 【关键修正】使用 openpyxl 引擎防止 xlsxwriter 报错
+        # 【修正】强制使用 openpyxl 引擎，避免 xlsxwriter 报错
         with pd.ExcelWriter(b, engine='openpyxl') as writer:
             out.to_excel(writer, index=False)
         return b.getvalue()
@@ -191,6 +190,9 @@ class DataEngine:
 class WordGenerator:
     @staticmethod
     def create_base_template(purchase_comp, sales_comp, dept_name, period_text):
+        """
+        【核心升级】内置模板生成引擎
+        """
         doc = docx.Document()
         
         # 1. 设置默认字体为宋体
@@ -252,6 +254,9 @@ class WordGenerator:
 
     @staticmethod
     def generate(df_result, period_text):
+        """
+        基于内置模板引擎生成 Word
+        """
         if not HAS_DOCX: return {}, "缺少 python-docx 库"
         
         req_cols = ['合同主体', '人事范围', '销售部门']
@@ -262,6 +267,7 @@ class WordGenerator:
         output_files = {}
 
         for purchase_comp, sales_comp, dept_name in pairs:
+            # 筛选数据
             df_curr = df_result[
                 (df_result['合同主体'] == purchase_comp) & 
                 (df_result['人事范围'] == sales_comp) &
@@ -270,34 +276,41 @@ class WordGenerator:
             
             if df_curr.empty: continue
 
+            # === 调用内置引擎绘制“空卷子” ===
             doc = WordGenerator.create_base_template(purchase_comp, sales_comp, dept_name, period_text)
+
+            # === 填充汇总数据 (Table 0) ===
             table0 = doc.tables[0]
             
+            # 计算汇总 (归一法)
             total_days = df_curr['支持时间（人天）'].sum()
             total_labor = df_curr['人力费用'].sum()
             total_sub = df_curr['差旅补助'].sum()
             total_fee = df_curr['差旅费控平台'].sum()
             grand_total = df_curr['结算费用合计'].sum()
             
-            cells = table0.rows[2].cells # 第三行填数据
+            # 填入 Row 2 (数据行)
+            cells = table0.rows[2].cells 
             
             fmt = lambda x: "{:,.2f}".format(x)
             fmt_d = lambda x: "{:,.1f}".format(x)
             
-            cells[0].text = fmt_d(total_days)
+            cells[0].text = fmt_d(total_days) # 标准-工时
             cells[1].text = "0.0"
             cells[2].text = "0.0"
-            cells[3].text = fmt(total_labor)
+            cells[3].text = fmt(total_labor)  # 标准-费用
             cells[4].text = "0.00"
             cells[5].text = "0.00"
-            cells[6].text = fmt(total_sub)
-            cells[7].text = fmt(total_fee)
-            cells[8].text = fmt_d(total_days)
-            cells[9].text = fmt(grand_total)
+            cells[6].text = fmt(total_sub)    # 补助
+            cells[7].text = fmt(total_fee)    # 平台
+            cells[8].text = fmt_d(total_days) # 总工时
+            cells[9].text = fmt(grand_total)  # 总费用
             
+            # 居中对齐数值
             for cell in cells:
                 for p in cell.paragraphs: p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
+            # === 填充明细数据 (Table 1) ===
             table1 = doc.tables[1]
             cols_map = ['人员', '人事范围', '所属项目', '合同主体', '销售人员', '销售部门', '支持时间（人天）', '人力费用', '差旅补助', '差旅费控平台', '结算费用合计']
             
@@ -315,6 +328,7 @@ class WordGenerator:
                         cell.text = str(val)
                     cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
+            # === 增加合计行到明细表底部 ===
             sum_row = table1.add_row()
             sum_row.cells[0].text = "合计"
             sum_row.cells[6].text = fmt_d(total_days)
@@ -381,6 +395,9 @@ class UIComponents:
 
     @staticmethod
     def render_download_zone(result_files, all_in_one_zip, word_files_dict):
+        """
+        【UI修正】大一统下载区
+        """
         with st.container(border=True):
             st.success("✅ 所有报表生成完毕")
             
@@ -397,18 +414,12 @@ class UIComponents:
 
             st.divider()
 
-            # 2. 中部：【关键恢复】表1/表2/表3 单独下载区
+            # 2. 中部：Excel 单独下载
             st.subheader("📊 基础数据表 (Excel)")
             c1, c2, c3 = st.columns(3)
-            # 使用 result_files.get 防止 KeyErrors
-            if result_files.get('t1') is not None:
-                c1.download_button("📥 表1: 工时统计", result_files['t1'], "表1_工时统计.xlsx", use_container_width=True)
-            
-            if result_files.get('t2') is not None:
-                c2.download_button("📥 表2: 结算汇总", result_files['t2'], "表2_结算汇总.xlsx", use_container_width=True)
-            
-            if result_files.get('t3') is not None:
-                c3.download_button("📥 表3: 详细明细", result_files['t3'], "表3_详细明细.xlsx", use_container_width=True)
+            if 't1' in result_files: c1.download_button("📥 表1: 工时统计", result_files['t1'], "t1.xlsx", use_container_width=True)
+            if 't2' in result_files: c2.download_button("📥 表2: 结算汇总", result_files['t2'], "t2.xlsx", use_container_width=True)
+            if 't3' in result_files: c3.download_button("📥 表3: 详细明细", result_files['t3'], "t3.xlsx", use_container_width=True)
 
             # 3. 底部：Word 列表 (动态生成)
             st.subheader(f"📝 结算单 (Word - 共{len(word_files_dict)}个)")
@@ -476,6 +487,7 @@ if 'is_calculated' not in st.session_state: st.session_state.is_calculated = Fal
 if 'error_report' not in st.session_state: st.session_state.error_report = None
 if 'block_auto_run' not in st.session_state: st.session_state.block_auto_run = False
 if 'is_editing_mapping' not in st.session_state: st.session_state.is_editing_mapping = False
+# 新增状态变量
 if 'all_zip' not in st.session_state: st.session_state.all_zip = None
 if 'word_files' not in st.session_state: st.session_state.word_files = {}
 
@@ -520,7 +532,7 @@ if st.session_state.page == 'main':
 
     if has_files:
         if st.session_state.is_calculated:
-            # 调用修复后的 UI 渲染
+            # 【修复】调用新的大一统下载渲染函数
             UIComponents.render_download_zone(
                 st.session_state.result_files, 
                 st.session_state.all_zip,
@@ -578,6 +590,7 @@ if st.session_state.page == 'main':
 
     if trigger:
         with st.spinner("🚀 正在计算数据并生成全套报表..."):
+            # 1. 校验逻辑 (保持您原有的代码)
             errs, df_a, df_b = DataEngine.validate(
                 st.session_state.data_store['A']['df'].copy(),
                 st.session_state.data_store['B']['df'].copy(),
@@ -590,25 +603,34 @@ if st.session_state.page == 'main':
                 st.session_state.block_auto_run = True
                 st.rerun()
             else:
+                # 2. 计算核心逻辑
                 res = DataEngine.calculate(df_a, df_b, st.session_state.mapping_config, price, sub_tag)
                 
-                # 生成 Excel
+                # 3. 生成 Excel 二进制流
+                # (注意：我们在 DataEngine.to_bytes 里已经改成了 openpyxl 引擎)
                 excel_files_dict = {
                     "表1_工时统计.xlsx": DataEngine.to_bytes(res['t1']),
                     "表2_结算汇总.xlsx": DataEngine.to_bytes(res['t2']),
                     "表3_详细明细.xlsx": DataEngine.to_bytes(res['t3'])
                 }
+                
+                # 保存 Excel 结果到 session 以供单独下载
                 st.session_state.result_files = excel_files_dict
                 
-                # 生成 Word (N个)
+                # 4. 生成 Word 二进制流
+                # (WordGenerator.generate 本身就是按逻辑生成 N 个文件的，这里直接调用)
                 word_files_dict, err_msg = WordGenerator.generate(res['t3'], period_text)
+                
                 if err_msg:
                     st.warning(f"Word生成部分受限: {err_msg}")
                     word_files_dict = {}
+                
                 st.session_state.word_files = word_files_dict
 
-                # 打包所有文件
+                # 5. 【关键】合并所有文件并打包成一个 ZIP
+                # 使用字典合并语法
                 all_files_to_zip = {**excel_files_dict, **word_files_dict}
+                
                 buf_zip = io.BytesIO()
                 with zipfile.ZipFile(buf_zip, 'w', zipfile.ZIP_DEFLATED) as z:
                     for fname, fcontent in all_files_to_zip.items():
