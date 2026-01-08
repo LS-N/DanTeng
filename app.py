@@ -3,22 +3,21 @@ import pandas as pd
 import io
 import time
 import zipfile
-from st_aggrid import AgGrid, GridOptionsBuilder
+# 移除：from st_aggrid import AgGrid, GridOptionsBuilder (不再需要第三方库)
 
 # ==============================================================================
-# Zone 0: 全局配置 & 样式注入 (已移除脆弱的 Hack)
+# Zone 0: 全局配置 & 样式注入
 # ==============================================================================
 st.set_page_config(page_title="淡藤财务报表 Pro", page_icon="😈", layout="wide", initial_sidebar_state="expanded")
 
 def inject_css():
-    # 仅保留自定义类 (这些是安全的，因为是你自己在代码里写的 HTML class)
     st.markdown("""
     <style>
         /* 基础配色变量 */
         :root { --bg-color: #0d1117; --card-bg: #161b22; --accent: #238636; --text: #c9d1d9; --border-color: #555c65; }
         .stApp { background-color: var(--bg-color); color: var(--text); }
         
-        /* 自定义组件样式 - 安全 */
+        /* 自定义组件样式 */
         .nav-header { font-size: 1.2rem; font-weight: bold; display:flex; align-items:center; height: 100%; }
         
         .info-bar {
@@ -38,8 +37,6 @@ def inject_css():
             border-radius: 6px;
             margin-bottom: 15px;
         }
-
-        /* 已移除：所有针对 data-testid 的强制覆盖，恢复 Streamlit 原生稳定样式 */
     </style>
     """, unsafe_allow_html=True)
 
@@ -49,7 +46,6 @@ def inject_css():
 class DataEngine:
     @staticmethod
     def get_default_config():
-        # 🔒 标记系统行
         return pd.DataFrame([
             # === 结果表 3 (14个核心字段 + 辅助) ===
             {"所属表": "结果表3", "序号": 1, "目标字段": "序号", "源表": "🔒 系统生成", "匹配字段": "-", "逻辑说明": "自增序列"},
@@ -102,7 +98,6 @@ class DataEngine:
         errors = []
         c = lambda t: DataEngine.get_col(config_df, t)
         
-        # 1. 动态获取列名
         col_a_user = c('人员')
         col_a_spm = c('SPM')
         col_a_hrs = c('耗时（小时）')
@@ -121,7 +116,6 @@ class DataEngine:
         
         if not (valid_a and valid_b): return errors, df_a, df_b
 
-        # 校验逻辑
         df_a_clean = df_a.copy()
         df_a_clean[col_a_hrs] = DataEngine.clean_num(df_a_clean, col_a_hrs)
         for i, r in df_a_clean[df_a_clean[col_a_hrs] < 0].iterrows():
@@ -226,12 +220,10 @@ class UIComponents:
         has_file = data['df'] is not None
         with st.container(border=True):
             if not has_file:
-                # 移除强制居中，使用默认左对齐，但在内部使用 markdown 简单提示
                 st.markdown(f"**{title}**")
                 return st.file_uploader(title, type=['xlsx', 'csv'], key=f"uploader_{key}", label_visibility="collapsed")
             else:
                 c1, c2 = st.columns([9, 1])
-                # 使用原生 markdown 样式，不依赖 div hack
                 c1.markdown(f"✅ **{data['name']}**")
                 if c2.button("Del", key=f"del_{key}"): return "DELETE"
         return None
@@ -241,7 +233,6 @@ class UIComponents:
         fixable = err_df[err_df['类型']=='数据错误']
         logic = err_df[err_df['类型']=='逻辑错误']
         
-        # 使用安全的自定义类 error-box
         st.markdown(f"<div class='error-box'><h3 style='margin:0'>🚨 校验失败</h3><p>发现 <b>{len(fixable)}</b> 个数据错误，<b>{len(logic)}</b> 个逻辑错误。</p></div>", unsafe_allow_html=True)
         
         st.dataframe(err_df[['类型','来源','行号','信息']], use_container_width=True, hide_index=True)
@@ -379,29 +370,26 @@ if st.session_state.page == 'main':
                     t1, t2 = st.tabs([f"A ({len(da)})", f"B ({len(db)})"])
                     na, nb = None, None
                     
+                    # === 替换为原生 st.data_editor，移除 AgGrid 依赖 ===
                     with t1:
                         if not da.empty:
-                            gb = GridOptionsBuilder.from_dataframe(da.fillna(""))
-                            gb.configure_column("_sys_id", hide=True)
-                            gb.configure_default_column(editable=True)
-                            na = AgGrid(da.fillna(""), gridOptions=gb.build(), height=300)['data']
+                            # 隐藏系统ID列，允许其他列编辑
+                            na = st.data_editor(da, height=300, hide_index=True, column_config={"_sys_id": None})
                         else: st.info("无数据错误")
                     with t2:
                         if not db.empty:
-                            gb = GridOptionsBuilder.from_dataframe(db.fillna(""))
-                            gb.configure_column("_sys_id", hide=True)
-                            gb.configure_default_column(editable=True)
-                            nb = AgGrid(db.fillna(""), gridOptions=gb.build(), height=300)['data']
+                            nb = st.data_editor(db, height=300, hide_index=True, column_config={"_sys_id": None})
                         else: st.info("无数据错误")
                     
                     if st.button("💾 保存并重算", type="primary"):
                         if na is not None:
                             od = st.session_state.data_store['A']['df'].set_index('_sys_id')
-                            od.update(pd.DataFrame(na).set_index('_sys_id'))
+                            # data_editor 返回的是 DataFrame，直接更新即可
+                            od.update(na.set_index('_sys_id'))
                             st.session_state.data_store['A']['df'] = od.reset_index()
                         if nb is not None:
                             od = st.session_state.data_store['B']['df'].set_index('_sys_id')
-                            od.update(pd.DataFrame(nb).set_index('_sys_id'))
+                            od.update(nb.set_index('_sys_id'))
                             st.session_state.data_store['B']['df'] = od.reset_index()
                         st.session_state.error_report = None
                         st.session_state.block_auto_run = False
