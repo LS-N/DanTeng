@@ -160,9 +160,12 @@ class DataEngine:
         # 1. 数值清洗
         df_a[col_a_hrs] = DataEngine.clean_num(df_a, col_a_hrs)
         df_b[col_b_amt] = DataEngine.clean_num(df_b, col_b_amt)
+        
+        # 【核心修正】Source B 金额单位转换：万元 -> 元
+        # 逻辑：先乘以 10000 变成元，再保留2位小数以防万一
+        df_b[col_b_amt] = (df_b[col_b_amt] * 10000).round(2)
 
-        # 2. 【核心新增】B表人员名称清洗 (关联前处理)
-        # 规则：如果出差人列包含 "_云计算" 后缀，删除该后缀，以便与 A 表匹配
+        # 2. B表人员名称清洗 (关联前处理)
         if col_b_user and col_b_user in df_b.columns:
             df_b[col_b_user] = df_b[col_b_user].astype(str).str.replace('_云计算', '', regex=False).str.strip()
 
@@ -172,7 +175,7 @@ class DataEngine:
             if col: agg_rules[col] = 'first'
         df_a_gp = df_a.groupby([col_a_user, col_a_spm], as_index=False).agg(agg_rules)
 
-        # 4. B表分流与聚合 (基于清洗后的人员名称)
+        # 4. B表分流与聚合
         is_sub = df_b[col_b_type].astype(str).str.contains(subsidy_tag, na=False)
         grp_b = [col_b_user, col_b_spm]
         df_sub = df_b[is_sub].groupby(grp_b)[col_b_amt].sum().reset_index(name='差旅补助')
@@ -188,10 +191,13 @@ class DataEngine:
         res = pd.merge(res, df_fee, left_on=[col_a_user, col_a_spm], right_on=[col_b_user, col_b_spm], how='left')
         res = res.fillna(0)
 
-        # 7. 最终公式计算
+        # 7. 最终公式计算 & 【精度控制】
+        # 保留2位小数
         res['支持时间（人天）'] = res[col_a_hrs] / 8
-        res['人力费用'] = res['支持时间（人天）'] * price_per_day
-        res['结算费用合计'] = res['人力费用'] + res['差旅补助'] + res['差旅费控平台']
+        res['人力费用'] = (res['支持时间（人天）'] * price_per_day).round(2)
+        res['差旅补助'] = res['差旅补助'].round(2)
+        res['差旅费控平台'] = res['差旅费控平台'].round(2)
+        res['结算费用合计'] = (res['人力费用'] + res['差旅补助'] + res['差旅费控平台']).round(2)
 
         rename_map = {
             col_a_user: '人员', dims_a['project']: '所属项目', dims_a['range']: '人事范围',
@@ -207,7 +213,9 @@ class DataEngine:
 
         t2_cols = ['人事范围', '合同主体', '销售部门']
         if all(c in t3.columns for c in t2_cols):
+            # 聚合表2也需要控制精度
             t2 = t3.groupby(t2_cols).agg({'结算费用合计':'sum', '支持时间（人天）':'sum'}).reset_index()
+            t2['结算费用合计'] = t2['结算费用合计'].round(2) 
             t2.columns = ['销售公司', '采购公司', '采购部门', '金额（含税，单位：元）', '工作量（人天）']
             t2.insert(0, '序号', range(1, len(t2)+1))
         else: t2 = pd.DataFrame()
