@@ -7,8 +7,10 @@ import zipfile
 # 尝试导入 python-docx
 try:
     import docx
-    from docx.shared import Pt
+    from docx.shared import Pt, Cm
     from docx.oxml.ns import qn
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_ALIGN_VERTICAL
     HAS_DOCX = True
 except ImportError:
     HAS_DOCX = False
@@ -125,7 +127,6 @@ class DataEngine:
 
         df_a[col_a_hrs] = DataEngine.clean_num(df_a, col_a_hrs)
         df_b[col_b_amt] = DataEngine.clean_num(df_b, col_b_amt)
-        # 核心逻辑：万元转元
         df_b[col_b_amt] = (df_b[col_b_amt] * 10000).round(2)
 
         if col_b_user and col_b_user in df_b.columns:
@@ -186,10 +187,82 @@ class DataEngine:
 
 class WordGenerator:
     @staticmethod
-    def generate(template_file, df_result, period_text):
+    def create_base_template(purchase_comp, sales_comp, dept_name, period_text):
         """
-        生成 Word 结算单：按 [合同主体(采购) + 人事范围(销售) + 销售部门(采购部门)] 三重维度拆分
-        核心策略：模板锚点填充 (Template Anchor & Fill)
+        【核心升级】内置模板生成引擎
+        无需上传文件，直接代码绘制包含合并单元格的复杂表格
+        """
+        doc = docx.Document()
+        
+        # 1. 设置默认字体为宋体
+        doc.styles['Normal'].font.name = 'Times New Roman'
+        doc.styles['Normal']._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+        
+        # 2. 标题
+        p_title = doc.add_paragraph()
+        p_title.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run = p_title.add_run(f"{purchase_comp} 与 {sales_comp} {period_text} 项目交付与运维费用结算账单")
+        run.font.size = Pt(14)
+        run.font.bold = True
+        
+        # 3. 汇总表 (Table 0) - 7行10列 (含合并逻辑)
+        table0 = doc.add_table(rows=7, cols=10)
+        table0.style = 'Table Grid'
+        
+        # --- 绘制复杂表头 ---
+        # Row 0: Headers
+        # 合并单元格: 工作量(0-2), 人力费用(3-5), 差旅费用(6-7), 合计(8-9)
+        r0 = table0.rows[0]
+        r0.cells[0].merge(r0.cells[2]).text = "工作量 （单位：人/天）"
+        r0.cells[3].merge(r0.cells[5]).text = "人力费用 （单位：元）"
+        r0.cells[6].merge(r0.cells[7]).text = "差旅费用 （单位：元）"
+        r0.cells[8].merge(r0.cells[9]).text = "合计"
+        
+        # Row 1: Sub-headers
+        r1 = table0.rows[1]
+        headers_r1 = ["项目标准交付", "项目数据治理", "项目运维服务", "项目标准交付", "项目数据治理", "项目运维服务", "差旅补助", "商旅平台费用", "工作量", "合计费用"]
+        for i, text in enumerate(headers_r1):
+            r1.cells[i].text = text
+            
+        # Row 2 & 3: Data Placeholders (留给 generate 方法填)
+        # 这里为了保持和原有逻辑一致，我们在 create 时先留空，后续 fill
+        
+        # Row 5: 区域行 (Index 5 in 0-based code logic from template, here it is Row 5)
+        # "项目所属区域" 在第1格，合并一下
+        r5 = table0.rows[5]
+        r5.cells[0].text = "项目所属区域"
+        # 填入部门
+        r5.cells[1].merge(r5.cells[9]).text = str(dept_name)
+        
+        # Row 6: 签字行
+        r6 = table0.rows[6]
+        r6.cells[0].text = "项目所属区域销售确认"
+        r6.cells[1].merge(r6.cells[9]).text = "确认意见：            签字（签章）：            日期：    年    月    日"
+
+        # 设置表格样式细节 (居中)
+        for row in table0.rows:
+            for cell in row.cells:
+                cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+                for paragraph in cell.paragraphs:
+                    paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+
+        doc.add_paragraph("\n费用详单：")
+        
+        # 4. 明细表 (Table 1) - 表头
+        table1 = doc.add_table(rows=1, cols=11)
+        table1.style = 'Table Grid'
+        cols_map = ['人员', '人事范围', '项目名称', '项目合同主体', '销售人员', '销售所在大区', '支持人天', '人力费用', '差旅补助', '差旅平台费用', '总费用（元）']
+        for i, col_name in enumerate(cols_map):
+            cell = table1.rows[0].cells[i]
+            cell.text = col_name
+            cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
+            
+        return doc
+
+    @staticmethod
+    def generate(df_result, period_text):
+        """
+        基于内置模板引擎生成 Word
         """
         if not HAS_DOCX: return None, "缺少 python-docx 库"
         
@@ -197,12 +270,11 @@ class WordGenerator:
         if not all(c in df_result.columns for c in req_cols):
             return None, "数据中缺少必要列（合同主体/人事范围/销售部门），无法拆分结算单"
         
-        # 1. 识别唯一的三重组合 (采购, 销售, 部门) - 对应表2的每一行
         pairs = df_result[req_cols].dropna().drop_duplicates().values
-        output_files = {} # {filename: bytes}
+        output_files = {}
 
         for purchase_comp, sales_comp, dept_name in pairs:
-            # 筛选数据：Result Table 3 切片
+            # 筛选数据
             df_curr = df_result[
                 (df_result['合同主体'] == purchase_comp) & 
                 (df_result['人事范围'] == sales_comp) &
@@ -211,88 +283,77 @@ class WordGenerator:
             
             if df_curr.empty: continue
 
-            # 加载模板 (Fresh Copy)
-            template_file.seek(0)
-            doc = docx.Document(template_file)
+            # === 调用内置引擎绘制“空卷子” ===
+            doc = WordGenerator.create_base_template(purchase_comp, sales_comp, dept_name, period_text)
 
-            # --- A. 标题 (Header) ---
-            # 逻辑：[采购] 与 [销售] [周期] ...
-            # 定位策略：假设标题在文档前两段中
-            if len(doc.paragraphs) > 1:
-                title_p = doc.paragraphs[1] # 根据之前分析，P1 是标题
-                # 保留原段落样式，仅替换文本
-                title_p.text = f"{purchase_comp}与{sales_comp}{period_text}项目交付与运维费用结算账单"
+            # === 填充汇总数据 (Table 0) ===
+            table0 = doc.tables[0]
+            
+            # 计算汇总 (归一法)
+            total_days = df_curr['支持时间（人天）'].sum()
+            total_labor = df_curr['人力费用'].sum()
+            total_sub = df_curr['差旅补助'].sum()
+            total_fee = df_curr['差旅费控平台'].sum()
+            grand_total = df_curr['结算费用合计'].sum()
+            
+            # 填入 Row 2 (Index 2, not 4 as before because structure is fresh)
+            # 注意：之前模板可能有空行，现在是我们自己画的，数据行在 index 2
+            # 为了美观，我们把 Row 2 和 Row 3 都填？或者只填 Row 2
+            # 您的截图中似乎有两行数据行（一行英文/key，一行value？），还是重复的？
+            # 假设只填一行数据
+            cells = table0.rows[2].cells # 第三行填数据
+            
+            fmt = lambda x: "{:,.2f}".format(x)
+            fmt_d = lambda x: "{:,.1f}".format(x)
+            
+            cells[0].text = fmt_d(total_days) # 标准-工时
+            cells[1].text = "0.0"
+            cells[2].text = "0.0"
+            cells[3].text = fmt(total_labor)  # 标准-费用
+            cells[4].text = "0.00"
+            cells[5].text = "0.00"
+            cells[6].text = fmt(total_sub)    # 补助
+            cells[7].text = fmt(total_fee)    # 平台
+            cells[8].text = fmt_d(total_days) # 总工时
+            cells[9].text = fmt(grand_total)  # 总费用
+            
+            # 居中对齐数值
+            for cell in cells:
+                for p in cell.paragraphs: p.alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-            # --- B. 汇总表 (Table 0 - 归一法填充) ---
-            if len(doc.tables) > 0:
-                table0 = doc.tables[0]
-                
-                # 统计当前切片的数据总和 (必须与表2该行一致)
-                total_days = df_curr['支持时间（人天）'].sum()
-                total_labor = df_curr['人力费用'].sum()
-                total_sub = df_curr['差旅补助'].sum()
-                total_fee = df_curr['差旅费控平台'].sum()
-                grand_total = df_curr['结算费用合计'].sum()
-                
-                # 填充数值 (假设数据行是 Index 4)
-                if len(table0.rows) >= 5:
-                    cells = table0.rows[4].cells
-                    fmt = lambda x: "{:,.2f}".format(x)
-                    fmt_d = lambda x: "{:,.1f}".format(x)
-                    
-                    if len(cells) >= 10:
-                        # 核心逻辑：所有工时/人力费用归入“标准交付”
-                        cells[0].text = fmt_d(total_days) # 标准交付-工作量
-                        cells[1].text = "0.0"             # 数据治理
-                        cells[2].text = "0.0"             # 运维服务
-                        cells[3].text = fmt(total_labor)  # 标准交付-费用
-                        cells[4].text = "0.00"            # 数据治理
-                        cells[5].text = "0.00"            # 运维服务
-                        cells[6].text = fmt(total_sub)    # 差旅补助
-                        cells[7].text = fmt(total_fee)    # 平台费用
-                        cells[8].text = fmt_d(total_days) # 合计工作量
-                        cells[9].text = fmt(grand_total)  # 合计费用
+            # === 填充明细数据 (Table 1) ===
+            table1 = doc.tables[1]
+            cols_map = ['人员', '人事范围', '所属项目', '合同主体', '销售人员', '销售部门', '支持时间（人天）', '人力费用', '差旅补助', '差旅费控平台', '结算费用合计']
+            
+            for _, row in df_curr.iterrows():
+                new_row = table1.add_row()
+                for i, col_name in enumerate(cols_map):
+                    val = row.get(col_name, '')
+                    cell = new_row.cells[i]
+                    if isinstance(val, (int, float)):
+                        if '人天' in col_name:
+                            cell.text = "{:,.1f}".format(val)
+                        else:
+                            cell.text = "{:,.2f}".format(val)
+                    else:
+                        cell.text = str(val)
+                    # 内容居中
+                    cell.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
-                # 填充区域 -> 销售部门(采购部门)
-                # 假设位置在 Index 5 的第 4 格
-                if len(table0.rows) >= 6:
-                    cells = table0.rows[5].cells
-                    if len(cells) >= 4:
-                        cells[3].text = str(dept_name)
-
-            # --- C. 明细表 (Table 1 - 逐行追加) ---
-            if len(doc.tables) > 1:
-                table1 = doc.tables[1]
-                # 清空旧数据 (倒序删除，保留表头 Row 0)
-                for i in range(len(table1.rows)-1, 0, -1):
-                    table1._tbl.remove(table1.rows[i]._tr)
-                
-                # 映射列顺序
-                cols_map = [
-                    '人员', '人事范围', '所属项目', '合同主体', '销售人员', '销售部门', 
-                    '支持时间（人天）', '人力费用', '差旅补助', '差旅费控平台', '结算费用合计'
-                ]
-                
-                for _, row in df_curr.iterrows():
-                    new_row = table1.add_row()
-                    # 复制上一行(表头?)的某些样式属性略复杂，这里直接填值
-                    # python-docx 的 add_row 会自动继承表格的默认样式
-                    for i, col_name in enumerate(cols_map):
-                        if i < len(new_row.cells):
-                            val = row.get(col_name, '')
-                            if isinstance(val, (int, float)):
-                                if '人天' in col_name:
-                                    new_row.cells[i].text = "{:,.1f}".format(val)
-                                else:
-                                    new_row.cells[i].text = "{:,.2f}".format(val)
-                            else:
-                                new_row.cells[i].text = str(val)
+            # === 增加合计行到明细表底部 ===
+            sum_row = table1.add_row()
+            sum_row.cells[0].text = "合计"
+            sum_row.cells[6].text = fmt_d(total_days)
+            sum_row.cells[7].text = fmt(total_labor)
+            sum_row.cells[8].text = fmt(total_sub)
+            sum_row.cells[9].text = fmt(total_fee)
+            sum_row.cells[10].text = fmt(grand_total)
+            for c in sum_row.cells: c.paragraphs[0].alignment = WD_ALIGN_PARAGRAPH.CENTER
 
             out = io.BytesIO()
             doc.save(out)
-            # 文件名：结算单_采购_销售_部门_周期.docx
             safe_dept = str(dept_name).replace('/', '_').replace('\\', '_')
-            fname = f"结算单_{purchase_comp}_{sales_comp}_{safe_dept}_{period_text}.docx"
+            fname = f"结算单_{purchase_comp}_{sales_comp}_{safe_dept}.docx"
             output_files[fname] = out.getvalue()
 
         return output_files, None
@@ -308,18 +369,14 @@ class UIComponents:
             p = st.number_input("人力单价 (元/天)", value=1500, step=100)
             h = st.number_input("工时阈值 (小时)", value=100)
             s = st.text_input("补助关键词", "差旅补助")
-            
-            st.markdown("---")
-            st.markdown("### 📄 结算单配置")
+            # 结算周期完全作为参数存在，不需要上传文件了
             period = st.text_input("结算周期文案", "2025年第三季度")
-            tpl = st.file_uploader("上传 Word 模板 (.docx)", type=['docx'], key="word_tpl", label_visibility="collapsed")
-            if tpl: st.caption("✅ 模板已就绪")
             
             st.markdown("---")
             if st.button("🐱 字段映射 & 逻辑", help="查看映射逻辑"):
                 st.session_state.page = 'mapping'
                 st.rerun()
-            return p, h, s, tpl, period
+            return p, h, s, period
 
     @staticmethod
     def render_file_slot(key, title, data_store):
@@ -363,7 +420,7 @@ class UIComponents:
                 if not HAS_DOCX:
                     c_main2.warning("⚠️ 缺少 python-docx 库")
                 else:
-                    c_main2.info("ℹ️ 未上传模板或未生成")
+                    c_main2.info("ℹ️ Word生成失败")
 
             st.markdown("---")
             c1, c2, c3 = st.columns(3)
@@ -423,7 +480,7 @@ if 'word_zip' not in st.session_state: st.session_state.word_zip = None
 inject_css()
 
 if st.session_state.page == 'main':
-    price, hours_limit, sub_tag, tpl_file, period_text = UIComponents.render_sidebar()
+    price, hours_limit, sub_tag, period_text = UIComponents.render_sidebar()
     st.title("😈 淡藤财务报表 Pro")
     
     with st.container(border=True):
@@ -529,23 +586,20 @@ if st.session_state.page == 'main':
                 res = DataEngine.calculate(df_a, df_b, st.session_state.mapping_config, price, sub_tag)
                 st.session_state.result_files = {k: DataEngine.to_bytes(v) for k, v in res.items()}
                 
-                # Word 生成 (ZIP打包)
-                if tpl_file:
-                    try:
-                        word_files, err_msg = WordGenerator.generate(tpl_file, res['t3'], period_text)
-                        if err_msg:
-                            st.error(f"Word生成失败: {err_msg}")
-                            st.session_state.word_zip = None
-                        elif word_files:
-                            buf_zip = io.BytesIO()
-                            with zipfile.ZipFile(buf_zip, 'w') as z:
-                                for fname, fcontent in word_files.items():
-                                    z.writestr(fname, fcontent)
-                            st.session_state.word_zip = buf_zip.getvalue()
-                    except Exception as e:
-                        st.error(f"Word引擎异常: {e}")
+                # Word 生成逻辑 (无需模板文件，直接生成)
+                try:
+                    word_files, err_msg = WordGenerator.generate(res['t3'], period_text)
+                    if err_msg:
+                        st.error(f"Word生成失败: {err_msg}")
                         st.session_state.word_zip = None
-                else:
+                    elif word_files:
+                        buf_zip = io.BytesIO()
+                        with zipfile.ZipFile(buf_zip, 'w') as z:
+                            for fname, fcontent in word_files.items():
+                                z.writestr(fname, fcontent)
+                        st.session_state.word_zip = buf_zip.getvalue()
+                except Exception as e:
+                    st.error(f"Word引擎异常: {e}")
                     st.session_state.word_zip = None
 
                 buf = io.BytesIO()
