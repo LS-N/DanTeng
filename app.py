@@ -94,12 +94,6 @@ class DataEngine:
 
     @staticmethod
     def validate(df_a, df_b, config_df, min_hours):
-        """
-        核心校验逻辑：
-        1. 检查列是否存在
-        2. 清洗数值并检查负数
-        3. 【新】按人员聚合，检查总工时是否低于 min_hours
-        """
         errors = []
         c = lambda t: DataEngine.get_col(config_df, t)
         
@@ -127,14 +121,12 @@ class DataEngine:
         for i, r in df_a_clean[df_a_clean[col_a_hrs] < 0].iterrows():
             errors.append({'类型':'数据错误', '来源':'Source A', '_sys_id':r.get('_sys_id','-'), '行号':r.get('_sys_id','-'), '信息':'工时为负'})
         
-        # 2. 【核心补充逻辑】按人聚合校验工时阈值
+        # 2. 按人聚合校验工时阈值
         if col_a_user and col_a_hrs and min_hours > 0:
             user_sums = df_a_clean.groupby(col_a_user)[col_a_hrs].sum()
-            # 筛选出总工时小于阈值的人员
             invalid_users = user_sums[user_sums < min_hours]
             
             for user, total_hrs in invalid_users.items():
-                # 挂载错误信息到该人员的第一条记录上，方便展示
                 sample_rows = df_a_clean[df_a_clean[col_a_user] == user]
                 if not sample_rows.empty:
                     r = sample_rows.iloc[0]
@@ -255,6 +247,9 @@ class UIComponents:
 
     @staticmethod
     def render_error_report(err_df, on_fix):
+        """
+        渲染错误报告，并返回是否需要【重算】
+        """
         fixable = err_df[err_df['类型']=='数据错误']
         logic = err_df[err_df['类型']=='逻辑错误']
         rule = err_df[err_df['类型']=='业务规则校验']
@@ -263,10 +258,17 @@ class UIComponents:
         
         st.dataframe(err_df[['类型','来源','行号','信息']], use_container_width=True, hide_index=True)
         
-        c1, c2 = st.columns(2)
+        # 布局优化：下载 | 重算 | 修复
+        c1, c2, c3 = st.columns([1, 1, 1])
         c1.download_button("📥 下载清单", err_df.to_csv(index=False).encode('utf-8-sig'), "err.csv", "text/csv", use_container_width=True)
+        
+        # 【新增】显式触发重算按钮
+        should_rerun = c2.button("🔄 参数已改，重新校验", type="secondary", use_container_width=True)
+        
         if not fixable.empty:
-            if c2.button("🛠️ 在线修复", type="primary", use_container_width=True): on_fix()
+            if c3.button("🛠️ 在线修复", type="primary", use_container_width=True): on_fix()
+            
+        return should_rerun
 
     @staticmethod
     def render_download_zone(result_files, result_zip):
@@ -285,11 +287,9 @@ class UIComponents:
         
         # 1. 准备数据
         df_display = subset[['序号', '目标字段', '源表', '匹配字段', '逻辑说明']].copy().reset_index(drop=True)
-        
-        # 【核心修正】将序号转为文本，实现“居左对齐”
         df_display['序号'] = df_display['序号'].astype(str)
         
-        # 2. 列配置 (设置宽度 width 和类型)
+        # 2. 列配置
         column_config = {
             "序号": st.column_config.TextColumn("序号", width="small", disabled=True),
             "目标字段": st.column_config.TextColumn("目标字段", disabled=True, width="medium"),
@@ -308,7 +308,7 @@ class UIComponents:
             column_config["源表"] = st.column_config.TextColumn("源表", disabled=True)
             column_config["匹配字段"] = st.column_config.TextColumn("匹配字段", disabled=True)
 
-        # 4. 【核心修正】动态计算表格高度 (自适应行数)
+        # 4. 动态计算表格高度
         calc_height = (len(df_display) + 1) * 35 + 10
         final_height = max(400, min(1000, calc_height))
 
@@ -316,10 +316,10 @@ class UIComponents:
         edited = st.data_editor(
             df_display,
             column_config=column_config,
-            use_container_width=True, # 占满容器宽度
+            use_container_width=True,
             hide_index=True,          
             disabled=not is_edit,
-            height=final_height,      # 应用动态高度
+            height=final_height,
             key=f"editor_{subset.iloc[0]['所属表']}"
         )
 
@@ -394,6 +394,8 @@ if st.session_state.page == 'main':
     if has_files:
         if st.session_state.is_calculated:
             UIComponents.render_download_zone(st.session_state.result_files, st.session_state.result_zip)
+        
+        # 错误报告处理逻辑 (含重算)
         elif st.session_state.error_report is not None:
             def fix_action():
                 @st.dialog("🛠️ 在线修复", width="large")
@@ -411,13 +413,12 @@ if st.session_state.page == 'main':
                     
                     with t1:
                         if not da.empty:
-                            h = max(300, min(600, (len(da)+1)*35+10))
-                            na = st.data_editor(da, height=h, hide_index=True, column_config={"_sys_id": None}, key="fix_a")
+                            # 隐藏 _sys_id，允许编辑其他
+                            na = st.data_editor(da, height=300, hide_index=True, column_config={"_sys_id": None}, key="fix_a")
                         else: st.info("无数据错误")
                     with t2:
                         if not db.empty:
-                            h = max(300, min(600, (len(db)+1)*35+10))
-                            nb = st.data_editor(db, height=h, hide_index=True, column_config={"_sys_id": None}, key="fix_b")
+                            nb = st.data_editor(db, height=300, hide_index=True, column_config={"_sys_id": None}, key="fix_b")
                         else: st.info("无数据错误")
                     
                     if st.button("💾 保存并重算", type="primary"):
@@ -433,7 +434,13 @@ if st.session_state.page == 'main':
                         st.session_state.block_auto_run = False
                         st.rerun()
                 show_fix()
-            UIComponents.render_error_report(st.session_state.error_report, fix_action)
+            
+            # 渲染错误报告，并监听【重算】按钮
+            should_rerun = UIComponents.render_error_report(st.session_state.error_report, fix_action)
+            if should_rerun:
+                st.session_state.error_report = None  # 清除错误状态
+                trigger = True # 触发重算
+
         elif st.session_state.block_auto_run:
             st.info("ℹ️ 源文件已更新，等待确认...")
             if st.button("▶️ 重新校验并计算", type="primary", use_container_width=True): trigger = True
