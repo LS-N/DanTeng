@@ -4,6 +4,14 @@ import io
 import time
 import zipfile
 
+# 尝试导入 python-docx
+try:
+    import docx
+    from docx.shared import Pt
+    HAS_DOCX = True
+except ImportError:
+    HAS_DOCX = False
+
 # ==============================================================================
 # Zone 0: 全局配置 & 样式注入
 # ==============================================================================
@@ -12,42 +20,21 @@ st.set_page_config(page_title="淡藤财务报表 Pro", page_icon="😈", layout
 def inject_css():
     st.markdown("""
     <style>
-        /* 基础配色变量 */
         :root { --bg-color: #0d1117; --card-bg: #161b22; --accent: #238636; --text: #c9d1d9; --border-color: #555c65; }
         .stApp { background-color: var(--bg-color); color: var(--text); }
-        
-        /* 自定义组件样式 */
         .nav-header { font-size: 1.2rem; font-weight: bold; display:flex; align-items:center; height: 100%; }
-        
-        .info-bar {
-            background-color: rgba(56, 139, 253, 0.1);
-            border-left: 4px solid #58a6ff;
-            color: #c9d1d9;
-            padding: 8px 15px;
-            margin-bottom: 20px;
-            font-size: 0.9rem;
-            border-radius: 4px;
-        }
-
-        .error-box {
-            border: 1px solid #ff7b72;
-            background-color: rgba(255, 123, 114, 0.1);
-            padding: 15px;
-            border-radius: 6px;
-            margin-bottom: 15px;
-        }
+        .info-bar { background-color: rgba(56, 139, 253, 0.1); border-left: 4px solid #58a6ff; color: #c9d1d9; padding: 8px 15px; margin-bottom: 20px; font-size: 0.9rem; border-radius: 4px; }
+        .error-box { border: 1px solid #ff7b72; background-color: rgba(255, 123, 114, 0.1); padding: 15px; border-radius: 6px; margin-bottom: 15px; }
     </style>
     """, unsafe_allow_html=True)
 
 # ==============================================================================
-# Zone A: 纯逻辑层 (DataEngine) - V20.0 内核
+# Zone A: 纯逻辑层 (DataEngine & WordGenerator)
 # ==============================================================================
 class DataEngine:
     @staticmethod
     def get_default_config():
-        # 更新后的配置表，保持与代码逻辑完全一致（包含清洗和精度说明）
         return pd.DataFrame([
-            # === 结果表 3 (14个核心字段 + 辅助) ===
             {"所属表": "结果表3", "序号": 1, "目标字段": "序号", "源表": "🔒 系统生成", "匹配字段": "-", "逻辑说明": "自增序列"},
             {"所属表": "结果表3", "序号": 2, "目标字段": "人员", "源表": "Source A", "匹配字段": "人员", "逻辑说明": "主键 (Join Key)"},
             {"所属表": "结果表3", "序号": 3, "目标字段": "所属项目", "源表": "Source A", "匹配字段": "项目", "逻辑说明": "维度 (First)"},
@@ -56,33 +43,21 @@ class DataEngine:
             {"所属表": "结果表3", "序号": 6, "目标字段": "合同主体", "源表": "Source A", "匹配字段": "合同主体", "逻辑说明": "维度 (->采购公司)"},
             {"所属表": "结果表3", "序号": 7, "目标字段": "销售人员", "源表": "Source A", "匹配字段": "销售", "逻辑说明": "维度 (First)"},
             {"所属表": "结果表3", "序号": 8, "目标字段": "销售部门", "源表": "Source A", "匹配字段": "销售部门", "逻辑说明": "维度 (->采购部门)"},
-            
-            # 更新：增加单位换算说明
             {"所属表": "结果表3", "序号": 9, "目标字段": "差旅补助", "源表": "Source B", "匹配字段": "金额", "逻辑说明": "筛选：类型='差旅补助' | 清洗：x10000转元"},
             {"所属表": "结果表3", "序号": 10, "目标字段": "差旅费控平台", "源表": "Source B", "匹配字段": "金额", "逻辑说明": "筛选：类型!='差旅补助' | 清洗：x10000转元"},
-            
             {"所属表": "结果表3", "序号": 11, "目标字段": "耗时（小时）", "源表": "Source A", "匹配字段": "交付工时", "逻辑说明": "SUM聚合 (清洗去逗号)"},
             {"所属表": "结果表3", "序号": 12, "目标字段": "支持时间（人天）", "源表": "🔒 公式计算", "匹配字段": "-", "逻辑说明": "耗时 / 8"},
-            
-            # 更新：增加精度说明
             {"所属表": "结果表3", "序号": 13, "目标字段": "人力费用", "源表": "🔒 公式计算", "匹配字段": "-", "逻辑说明": "人天 * 单价 (保留2位小数)"},
             {"所属表": "结果表3", "序号": 14, "目标字段": "结算费用合计", "源表": "🔒 公式计算", "匹配字段": "-", "逻辑说明": "人力 + 差旅 + 费控 (保留2位小数)"},
-            
-            # 辅助配置
-            # 更新：增加清洗规则说明
             {"所属表": "结果表3", "序号": 15, "目标字段": "[配置] B表关联人", "源表": "Source B", "匹配字段": "出差人", "逻辑说明": "辅助：用于匹配A表人员 (自动去'_云计算'后缀)"},
             {"所属表": "结果表3", "序号": 16, "目标字段": "[配置] B表关联SPM", "源表": "Source B", "匹配字段": "SPM", "逻辑说明": "辅助：用于匹配A表SPM"},
             {"所属表": "结果表3", "序号": 17, "目标字段": "[配置] B表类型列", "源表": "Source B", "匹配字段": "产品类型", "逻辑说明": "辅助：用于区分补助/费控"},
-
-            # === 结果表 2 ===
             {"所属表": "结果表2", "序号": 1, "目标字段": "序号", "源表": "🔒 系统生成", "匹配字段": "-", "逻辑说明": "自增序列"},
             {"所属表": "结果表2", "序号": 2, "目标字段": "销售公司", "源表": "🔒 结果表3", "匹配字段": "人事范围", "逻辑说明": "维度分组"},
             {"所属表": "结果表2", "序号": 3, "目标字段": "采购公司", "源表": "🔒 结果表3", "匹配字段": "合同主体", "逻辑说明": "维度分组"},
             {"所属表": "结果表2", "序号": 4, "目标字段": "采购部门", "源表": "🔒 结果表3", "匹配字段": "销售部门", "逻辑说明": "维度分组"},
             {"所属表": "结果表2", "序号": 5, "目标字段": "金额（含税）", "源表": "🔒 结果表3", "匹配字段": "结算费用合计", "逻辑说明": "SUM聚合 (保留2位小数)"},
             {"所属表": "结果表2", "序号": 6, "目标字段": "工作量（人天）", "源表": "🔒 结果表3", "匹配字段": "支持时间（人天）", "逻辑说明": "SUM聚合"},
-
-            # === 结果表 1 ===
             {"所属表": "结果表1", "序号": 1, "目标字段": "序号", "源表": "🔒 系统生成", "匹配字段": "-", "逻辑说明": "自增序列"},
             {"所属表": "结果表1", "序号": 2, "目标字段": "人员", "源表": "🔒 结果表3", "匹配字段": "人员", "逻辑说明": "维度分组"},
             {"所属表": "结果表1", "序号": 3, "目标字段": "项目工时", "源表": "🔒 结果表3", "匹配字段": "耗时（小时）", "逻辑说明": "SUM聚合"},
@@ -101,15 +76,8 @@ class DataEngine:
 
     @staticmethod
     def validate(df_a, df_b, config_df, min_hours):
-        """
-        核心校验逻辑：
-        1. 检查列是否存在
-        2. 清洗数值并检查负数
-        3. 【新】按人员聚合，检查总工时是否低于 min_hours
-        """
         errors = []
         c = lambda t: DataEngine.get_col(config_df, t)
-        
         col_a_user = c('人员')
         col_a_spm = c('SPM')
         col_a_hrs = c('耗时（小时）')
@@ -125,107 +93,76 @@ class DataEngine:
 
         valid_a = check(df_a, col_a_user, 'Source A', '人员') and check(df_a, col_a_spm, 'Source A', 'SPM') and check(df_a, col_a_hrs, 'Source A', '工时')
         valid_b = check(df_b, col_b_user, 'Source B', '出差人') and check(df_b, col_b_spm, 'Source B', 'SPM') and check(df_b, col_b_amt, 'Source B', '金额')
-        
         if not (valid_a and valid_b): return errors, df_a, df_b
 
-        # 1. 基础清洗与负数校验
         df_a_clean = df_a.copy()
         df_a_clean[col_a_hrs] = DataEngine.clean_num(df_a_clean, col_a_hrs)
         for i, r in df_a_clean[df_a_clean[col_a_hrs] < 0].iterrows():
             errors.append({'类型':'数据错误', '来源':'Source A', '_sys_id':r.get('_sys_id','-'), '行号':r.get('_sys_id','-'), '信息':'工时为负'})
         
-        # 2. 【核心】按人聚合校验工时阈值
         if col_a_user and col_a_hrs and min_hours > 0:
             user_sums = df_a_clean.groupby(col_a_user)[col_a_hrs].sum()
             invalid_users = user_sums[user_sums < min_hours]
-            
             for user, total_hrs in invalid_users.items():
-                # 挂载错误信息到该人员的第一条记录上
                 sample_rows = df_a_clean[df_a_clean[col_a_user] == user]
                 if not sample_rows.empty:
                     r = sample_rows.iloc[0]
-                    errors.append({
-                        '类型': '业务规则校验', 
-                        '来源': 'Source A',
-                        '_sys_id': r.get('_sys_id', '-'),
-                        '行号': r.get('_sys_id', '-'), 
-                        '信息': f'人员【{user}】总工时({total_hrs}h) 低于阈值({min_hours}h)'
-                    })
-
+                    errors.append({'类型': '业务规则校验', '来源': 'Source A', '_sys_id': r.get('_sys_id', '-'), '行号': r.get('_sys_id', '-'), '信息': f'人员【{user}】总工时({total_hrs}h) 低于阈值({min_hours}h)'})
         return errors, df_a, df_b
 
     @staticmethod
     def calculate(df_a, df_b, config_df, price_per_day, subsidy_tag):
         c = lambda t: DataEngine.get_col(config_df, t)
-        
         col_a_user = c('人员')
         col_a_spm = c('SPM')
         col_a_hrs = c('耗时（小时）')
-        dims_a = {
-            'project': c('所属项目'), 'range': c('人事范围'), 'contract': c('合同主体'),
-            'sales': c('销售人员'), 'dept': c('销售部门')
-        }
-        
+        dims_a = {'project': c('所属项目'), 'range': c('人事范围'), 'contract': c('合同主体'), 'sales': c('销售人员'), 'dept': c('销售部门')}
         col_b_user = c('[配置] B表关联人')
         col_b_spm = c('[配置] B表关联SPM')
         col_b_amt = c('差旅补助')
         col_b_type = c('[配置] B表类型列')
 
-        # 1. 数值清洗
         df_a[col_a_hrs] = DataEngine.clean_num(df_a, col_a_hrs)
         df_b[col_b_amt] = DataEngine.clean_num(df_b, col_b_amt)
-        
-        # 【核心】Source B 金额单位转换：万元 -> 元
+        # 核心逻辑：万元转元
         df_b[col_b_amt] = (df_b[col_b_amt] * 10000).round(2)
 
-        # 2. 【核心】B表人员名称清洗 (去后缀)
         if col_b_user and col_b_user in df_b.columns:
             df_b[col_b_user] = df_b[col_b_user].astype(str).str.replace('_云计算', '', regex=False).str.strip()
 
-        # 3. A表聚合
         agg_rules = {col_a_hrs: 'sum'}
         for _, col in dims_a.items():
             if col: agg_rules[col] = 'first'
         df_a_gp = df_a.groupby([col_a_user, col_a_spm], as_index=False).agg(agg_rules)
 
-        # 4. B表分流与聚合
         is_sub = df_b[col_b_type].astype(str).str.contains(subsidy_tag, na=False)
         grp_b = [col_b_user, col_b_spm]
         df_sub = df_b[is_sub].groupby(grp_b)[col_b_amt].sum().reset_index(name='差旅补助')
         df_fee = df_b[~is_sub].groupby(grp_b)[col_b_amt].sum().reset_index(name='差旅费控平台')
 
-        # 5. 统一数据类型
         for d in [df_a_gp, df_sub, df_fee]:
             k = col_a_spm if col_a_spm in d.columns else col_b_spm
             d[k] = d[k].astype(str)
 
-        # 6. 关联计算 (Left Join)
         res = pd.merge(df_a_gp, df_sub, left_on=[col_a_user, col_a_spm], right_on=[col_b_user, col_b_spm], how='left')
         res = pd.merge(res, df_fee, left_on=[col_a_user, col_a_spm], right_on=[col_b_user, col_b_spm], how='left')
         res = res.fillna(0)
 
-        # 7. 最终公式计算 & 【精度控制】
         res['支持时间（人天）'] = res[col_a_hrs] / 8
         res['人力费用'] = (res['支持时间（人天）'] * price_per_day).round(2)
         res['差旅补助'] = res['差旅补助'].round(2)
         res['差旅费控平台'] = res['差旅费控平台'].round(2)
         res['结算费用合计'] = (res['人力费用'] + res['差旅补助'] + res['差旅费控平台']).round(2)
 
-        rename_map = {
-            col_a_user: '人员', dims_a['project']: '所属项目', dims_a['range']: '人事范围',
-            col_a_spm: 'SPM', dims_a['contract']: '合同主体', dims_a['sales']: '销售人员',
-            dims_a['dept']: '销售部门', col_a_hrs: '耗时（小时）'
-        }
+        rename_map = {col_a_user: '人员', dims_a['project']: '所属项目', dims_a['range']: '人事范围', col_a_spm: 'SPM', dims_a['contract']: '合同主体', dims_a['sales']: '销售人员', dims_a['dept']: '销售部门', col_a_hrs: '耗时（小时）'}
         t3 = res.rename(columns=rename_map)
         
-        final_cols = ['序号','人员','所属项目','人事范围','SPM','合同主体','销售人员','销售部门',
-                      '差旅补助','差旅费控平台','耗时（小时）','支持时间（人天）','人力费用','结算费用合计']
+        final_cols = ['序号','人员','所属项目','人事范围','SPM','合同主体','销售人员','销售部门','差旅补助','差旅费控平台','耗时（小时）','支持时间（人天）','人力费用','结算费用合计']
         t3.insert(0, '序号', range(1, len(t3)+1))
         t3 = t3[[c for c in final_cols if c in t3.columns]]
 
         t2_cols = ['人事范围', '合同主体', '销售部门']
         if all(c in t3.columns for c in t2_cols):
-            # 聚合表2也需要控制精度
             t2 = t3.groupby(t2_cols).agg({'结算费用合计':'sum', '支持时间（人天）':'sum'}).reset_index()
             t2['结算费用合计'] = t2['结算费用合计'].round(2)
             t2.columns = ['销售公司', '采购公司', '采购部门', '金额（含税，单位：元）', '工作量（人天）']
@@ -245,6 +182,115 @@ class DataEngine:
         out.to_excel(b, index=False)
         return b.getvalue()
 
+class WordGenerator:
+    @staticmethod
+    def generate(template_file, df_result, period_text):
+        """
+        生成 Word 结算单：按 [合同主体(采购) + 人事范围(销售) + 销售部门(采购部门)] 三重维度拆分
+        """
+        if not HAS_DOCX: return None, "缺少 python-docx 库"
+        
+        req_cols = ['合同主体', '人事范围', '销售部门']
+        if not all(c in df_result.columns for c in req_cols):
+            return None, "数据中缺少必要列（合同主体/人事范围/销售部门），无法拆分结算单"
+        
+        # 1. 识别唯一的三重组合 (采购, 销售, 部门)
+        # 对应结果表2的每一行
+        pairs = df_result[req_cols].dropna().drop_duplicates().values
+        output_files = {} # {filename: bytes}
+
+        for purchase_comp, sales_comp, dept_name in pairs:
+            # 筛选数据：Result Table 3 切片
+            df_curr = df_result[
+                (df_result['合同主体'] == purchase_comp) & 
+                (df_result['人事范围'] == sales_comp) &
+                (df_result['销售部门'] == dept_name)
+            ].copy()
+            
+            if df_curr.empty: continue
+
+            # 加载模板
+            template_file.seek(0)
+            doc = docx.Document(template_file)
+
+            # --- A. 标题 (Fixed Style Header) ---
+            # 逻辑：[采购] 与 [销售] [周期] ...
+            # 假设模板第一段或第二段是标题
+            # 技巧：这里只替换 text，会保留模板里该段落已有的居中、字体大小等样式
+            if len(doc.paragraphs) > 1:
+                title_p = doc.paragraphs[1] 
+                new_title = f"{purchase_comp}与{sales_comp}{period_text}项目交付与运维费用结算账单"
+                title_p.text = new_title 
+
+            # --- B. 汇总表 (Table 0 - Anchor & Fill) ---
+            if len(doc.tables) > 0:
+                table0 = doc.tables[0]
+                
+                # 统计当前切片的数据总和
+                total_days = df_curr['支持时间（人天）'].sum()
+                total_labor = df_curr['人力费用'].sum()
+                total_sub = df_curr['差旅补助'].sum()
+                total_fee = df_curr['差旅费控平台'].sum()
+                grand_total = df_curr['结算费用合计'].sum()
+                
+                # 填充数值 (定点填充：假设数据行是 Index 4)
+                if len(table0.rows) >= 5:
+                    cells = table0.rows[4].cells
+                    fmt = lambda x: "{:,.2f}".format(x)
+                    fmt_d = lambda x: "{:,.1f}".format(x)
+                    
+                    if len(cells) >= 10:
+                        cells[0].text = fmt_d(total_days) # 标准交付-工作量
+                        cells[1].text = "0.0"
+                        cells[2].text = "0.0"
+                        cells[3].text = fmt(total_labor)  # 标准交付-费用
+                        cells[4].text = "0.00"
+                        cells[5].text = "0.00"
+                        cells[6].text = fmt(total_sub)    # 差旅补助
+                        cells[7].text = fmt(total_fee)    # 平台费用
+                        cells[8].text = fmt_d(total_days) # 合计工作量
+                        cells[9].text = fmt(grand_total)  # 合计费用
+
+                # 填充区域 -> 销售部门(采购部门)
+                if len(table0.rows) >= 6:
+                    cells = table0.rows[5].cells
+                    if len(cells) >= 4:
+                        cells[3].text = str(dept_name) # 回填采购部门
+
+            # --- C. 明细表 (Table 1 - Append Rows) ---
+            if len(doc.tables) > 1:
+                table1 = doc.tables[1]
+                # 清空旧数据 (保留表头)
+                for i in range(len(table1.rows)-1, 0, -1):
+                    table1._tbl.remove(table1.rows[i]._tr)
+                
+                cols_map = [
+                    '人员', '人事范围', '所属项目', '合同主体', '销售人员', '销售部门', 
+                    '支持时间（人天）', '人力费用', '差旅补助', '差旅费控平台', '结算费用合计'
+                ]
+                
+                for _, row in df_curr.iterrows():
+                    new_row = table1.add_row()
+                    for i, col_name in enumerate(cols_map):
+                        if i < len(new_row.cells):
+                            val = row.get(col_name, '')
+                            if isinstance(val, (int, float)):
+                                if '人天' in col_name:
+                                    new_row.cells[i].text = "{:,.1f}".format(val)
+                                else:
+                                    new_row.cells[i].text = "{:,.2f}".format(val)
+                            else:
+                                new_row.cells[i].text = str(val)
+
+            out = io.BytesIO()
+            doc.save(out)
+            # 文件名安全处理
+            safe_dept = str(dept_name).replace('/', '_').replace('\\', '_')
+            fname = f"结算单_{purchase_comp}_{sales_comp}_{safe_dept}.docx"
+            output_files[fname] = out.getvalue()
+
+        return output_files, None
+
 # ==============================================================================
 # Zone B: UI 组件层 (View)
 # ==============================================================================
@@ -256,11 +302,18 @@ class UIComponents:
             p = st.number_input("人力单价 (元/天)", value=1500, step=100)
             h = st.number_input("工时阈值 (小时)", value=100)
             s = st.text_input("补助关键词", "差旅补助")
+            
+            st.markdown("---")
+            st.markdown("### 📄 结算单配置")
+            period = st.text_input("结算周期文案", "2025年第三季度")
+            tpl = st.file_uploader("上传 Word 模板 (.docx)", type=['docx'], key="word_tpl", label_visibility="collapsed")
+            if tpl: st.caption("✅ 模板已就绪")
+            
             st.markdown("---")
             if st.button("🐱 字段映射 & 逻辑", help="查看映射逻辑"):
                 st.session_state.page = 'mapping'
                 st.rerun()
-            return p, h, s
+            return p, h, s, tpl, period
 
     @staticmethod
     def render_file_slot(key, title, data_store):
@@ -278,32 +331,34 @@ class UIComponents:
 
     @staticmethod
     def render_error_report(err_df, on_fix):
-        """
-        渲染错误报告，并返回是否需要【重算】
-        """
         fixable = err_df[err_df['类型']=='数据错误']
         logic = err_df[err_df['类型']=='逻辑错误']
         rule = err_df[err_df['类型']=='业务规则校验']
-        
         st.markdown(f"<div class='error-box'><h3 style='margin:0'>🚨 校验失败</h3><p>发现 <b>{len(fixable)}</b> 个数据错误，<b>{len(rule)}</b> 个规则异常，<b>{len(logic)}</b> 个映射错误。</p></div>", unsafe_allow_html=True)
-        
         st.dataframe(err_df[['类型','来源','行号','信息']], use_container_width=True, hide_index=True)
-        
         c1, c2, c3 = st.columns([1, 1, 1])
         c1.download_button("📥 下载清单", err_df.to_csv(index=False).encode('utf-8-sig'), "err.csv", "text/csv", use_container_width=True)
-        
         should_rerun = c2.button("🔄 参数已改，重新校验", type="secondary", use_container_width=True)
-        
         if not fixable.empty:
             if c3.button("🛠️ 在线修复", type="primary", use_container_width=True): on_fix()
-            
         return should_rerun
 
     @staticmethod
-    def render_download_zone(result_files, result_zip):
+    def render_download_zone(result_files, result_zip, word_zip_data):
         with st.container(border=True):
             st.success("✅ 生成完毕")
-            st.download_button("📦 批量下载 (ZIP)", result_zip, "report.zip", type="primary", use_container_width=True)
+            
+            c_main1, c_main2 = st.columns(2)
+            c_main1.download_button("📦 批量下载 (Excel ZIP)", result_zip, "report_excel.zip", type="primary", use_container_width=True)
+            
+            if word_zip_data:
+                c_main2.download_button("📄 下载结算单 (Word ZIP)", word_zip_data, "report_settlement.zip", type="primary", use_container_width=True)
+            else:
+                if not HAS_DOCX:
+                    c_main2.warning("⚠️ 缺少 python-docx 库")
+                else:
+                    c_main2.info("ℹ️ 未上传模板或未生成")
+
             st.markdown("---")
             c1, c2, c3 = st.columns(3)
             if 't1' in result_files: c1.download_button("📥 表1: 工时统计", result_files['t1'], "t1.xlsx", use_container_width=True)
@@ -313,55 +368,30 @@ class UIComponents:
     @staticmethod
     def render_native_editor(desc, subset, is_edit, cols_a, cols_b):
         st.markdown(f'<div class="info-bar">ℹ️ {desc}</div>', unsafe_allow_html=True)
-        
-        # 1. 准备数据
         df_display = subset[['序号', '目标字段', '源表', '匹配字段', '逻辑说明']].copy().reset_index(drop=True)
-        # 【核心】转字符串，实现居左对齐
         df_display['序号'] = df_display['序号'].astype(str)
-        
-        # 2. 列配置
         column_config = {
             "序号": st.column_config.TextColumn("序号", width="small", disabled=True),
             "目标字段": st.column_config.TextColumn("目标字段", disabled=True, width="medium"),
             "逻辑说明": st.column_config.TextColumn("逻辑说明", disabled=True, width="large"),
         }
-
-        # 3. 动态配置可编辑列
         if is_edit:
-            column_config["源表"] = st.column_config.SelectboxColumn(
-                "源表", options=["Source A", "Source B"], width="small", required=True
-            )
-            column_config["匹配字段"] = st.column_config.SelectboxColumn(
-                "匹配字段", options=cols_a + cols_b, width="medium", required=True
-            )
+            column_config["源表"] = st.column_config.SelectboxColumn("源表", options=["Source A", "Source B"], width="small", required=True)
+            column_config["匹配字段"] = st.column_config.SelectboxColumn("匹配字段", options=cols_a + cols_b, width="medium", required=True)
         else:
             column_config["源表"] = st.column_config.TextColumn("源表", disabled=True)
             column_config["匹配字段"] = st.column_config.TextColumn("匹配字段", disabled=True)
 
-        # 4. 动态计算表格高度
         calc_height = (len(df_display) + 1) * 35 + 10
         final_height = max(400, min(1000, calc_height))
 
-        # 5. 渲染表格
-        edited = st.data_editor(
-            df_display,
-            column_config=column_config,
-            use_container_width=True,
-            hide_index=True,          
-            disabled=not is_edit,
-            height=final_height,
-            key=f"editor_{subset.iloc[0]['所属表']}"
-        )
+        edited = st.data_editor(df_display, column_config=column_config, use_container_width=True, hide_index=True, disabled=not is_edit, height=final_height, key=f"editor_{subset.iloc[0]['所属表']}")
 
-        # 6. 保存逻辑
         if is_edit:
             for i, row in edited.iterrows():
                 orig_idx = subset.index[i]
                 orig_row = st.session_state.mapping_config.loc[orig_idx]
-                
-                if 'Source' not in orig_row['源表']:
-                    continue 
-                
+                if 'Source' not in orig_row['源表']: continue 
                 if row['源表'] != orig_row['源表']:
                     st.session_state.mapping_config.at[orig_idx, '源表'] = row['源表']
                     target_opts = cols_a if row['源表'] == 'Source A' else cols_b
@@ -382,11 +412,12 @@ if 'is_calculated' not in st.session_state: st.session_state.is_calculated = Fal
 if 'error_report' not in st.session_state: st.session_state.error_report = None
 if 'block_auto_run' not in st.session_state: st.session_state.block_auto_run = False
 if 'is_editing_mapping' not in st.session_state: st.session_state.is_editing_mapping = False
+if 'word_zip' not in st.session_state: st.session_state.word_zip = None
 
 inject_css()
 
 if st.session_state.page == 'main':
-    price, hours_limit, sub_tag = UIComponents.render_sidebar()
+    price, hours_limit, sub_tag, tpl_file, period_text = UIComponents.render_sidebar()
     st.title("😈 淡藤财务报表 Pro")
     
     with st.container(border=True):
@@ -404,6 +435,7 @@ if st.session_state.page == 'main':
                 st.session_state.is_calculated = False
                 st.session_state.error_report = None
                 st.session_state.block_auto_run = False
+                st.session_state.word_zip = None
                 st.rerun()
             elif res:
                 try:
@@ -423,9 +455,8 @@ if st.session_state.page == 'main':
 
     if has_files:
         if st.session_state.is_calculated:
-            UIComponents.render_download_zone(st.session_state.result_files, st.session_state.result_zip)
+            UIComponents.render_download_zone(st.session_state.result_files, st.session_state.result_zip, st.session_state.word_zip)
         
-        # 错误报告处理逻辑 (含重算按钮)
         elif st.session_state.error_report is not None:
             def fix_action():
                 @st.dialog("🛠️ 在线修复", width="large")
@@ -464,7 +495,6 @@ if st.session_state.page == 'main':
                         st.rerun()
                 show_fix()
             
-            # 渲染错误报告，并监听【重算】按钮
             should_rerun = UIComponents.render_error_report(st.session_state.error_report, fix_action)
             if should_rerun:
                 st.session_state.error_report = None
@@ -492,6 +522,26 @@ if st.session_state.page == 'main':
             else:
                 res = DataEngine.calculate(df_a, df_b, st.session_state.mapping_config, price, sub_tag)
                 st.session_state.result_files = {k: DataEngine.to_bytes(v) for k, v in res.items()}
+                
+                # Word 生成 (ZIP打包)
+                if tpl_file:
+                    try:
+                        word_files, err_msg = WordGenerator.generate(tpl_file, res['t3'], period_text)
+                        if err_msg:
+                            st.error(f"Word生成失败: {err_msg}")
+                            st.session_state.word_zip = None
+                        elif word_files:
+                            buf_zip = io.BytesIO()
+                            with zipfile.ZipFile(buf_zip, 'w') as z:
+                                for fname, fcontent in word_files.items():
+                                    z.writestr(fname, fcontent)
+                            st.session_state.word_zip = buf_zip.getvalue()
+                    except Exception as e:
+                        st.error(f"Word引擎异常: {e}")
+                        st.session_state.word_zip = None
+                else:
+                    st.session_state.word_zip = None
+
                 buf = io.BytesIO()
                 with zipfile.ZipFile(buf, 'w') as z:
                     z.writestr("表1_工时.xlsx", st.session_state.result_files['t1'])
