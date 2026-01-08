@@ -3,7 +3,6 @@ import pandas as pd
 import io
 import time
 import zipfile
-# 移除：from st_aggrid import AgGrid, GridOptionsBuilder (不再需要第三方库)
 
 # ==============================================================================
 # Zone 0: 全局配置 & 样式注入
@@ -276,12 +275,19 @@ class UIComponents:
             column_config["源表"] = st.column_config.TextColumn("源表", disabled=True)
             column_config["匹配字段"] = st.column_config.TextColumn("匹配字段", disabled=True)
 
+        # === 核心修改：动态计算表格高度 ===
+        # 公式：(行数 + 1) * 35px。+1 是为了给表头留位置。
+        # 限制：最小 400px，最大 1000px (防止无限长)
+        calc_height = (len(df_display) + 1) * 35 + 10
+        final_height = max(400, min(1000, calc_height))
+
         edited = st.data_editor(
             df_display,
             column_config=column_config,
             use_container_width=True,
             hide_index=True,
-            disabled=not is_edit, 
+            disabled=not is_edit,
+            height=final_height,  # 应用动态高度
             key=f"editor_{subset.iloc[0]['所属表']}"
         )
 
@@ -370,21 +376,21 @@ if st.session_state.page == 'main':
                     t1, t2 = st.tabs([f"A ({len(da)})", f"B ({len(db)})"])
                     na, nb = None, None
                     
-                    # === 替换为原生 st.data_editor，移除 AgGrid 依赖 ===
                     with t1:
                         if not da.empty:
-                            # 隐藏系统ID列，允许其他列编辑
-                            na = st.data_editor(da, height=300, hide_index=True, column_config={"_sys_id": None})
+                            # 动态计算修复弹窗表格高度
+                            h = max(300, min(600, (len(da)+1)*35+10))
+                            na = st.data_editor(da, height=h, hide_index=True, column_config={"_sys_id": None}, key="fix_a")
                         else: st.info("无数据错误")
                     with t2:
                         if not db.empty:
-                            nb = st.data_editor(db, height=300, hide_index=True, column_config={"_sys_id": None})
+                            h = max(300, min(600, (len(db)+1)*35+10))
+                            nb = st.data_editor(db, height=h, hide_index=True, column_config={"_sys_id": None}, key="fix_b")
                         else: st.info("无数据错误")
                     
                     if st.button("💾 保存并重算", type="primary"):
                         if na is not None:
                             od = st.session_state.data_store['A']['df'].set_index('_sys_id')
-                            # data_editor 返回的是 DataFrame，直接更新即可
                             od.update(na.set_index('_sys_id'))
                             st.session_state.data_store['A']['df'] = od.reset_index()
                         if nb is not None:
