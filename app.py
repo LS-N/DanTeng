@@ -45,6 +45,7 @@ def inject_css():
 class DataEngine:
     @staticmethod
     def get_default_config():
+        # 更新后的配置表，保持与代码逻辑完全一致（包含清洗和精度说明）
         return pd.DataFrame([
             # === 结果表 3 (14个核心字段 + 辅助) ===
             {"所属表": "结果表3", "序号": 1, "目标字段": "序号", "源表": "🔒 系统生成", "匹配字段": "-", "逻辑说明": "自增序列"},
@@ -55,15 +56,21 @@ class DataEngine:
             {"所属表": "结果表3", "序号": 6, "目标字段": "合同主体", "源表": "Source A", "匹配字段": "合同主体", "逻辑说明": "维度 (->采购公司)"},
             {"所属表": "结果表3", "序号": 7, "目标字段": "销售人员", "源表": "Source A", "匹配字段": "销售", "逻辑说明": "维度 (First)"},
             {"所属表": "结果表3", "序号": 8, "目标字段": "销售部门", "源表": "Source A", "匹配字段": "销售部门", "逻辑说明": "维度 (->采购部门)"},
-            {"所属表": "结果表3", "序号": 9, "目标字段": "差旅补助", "源表": "Source B", "匹配字段": "金额", "逻辑说明": "筛选：产品类型='差旅补助'"},
-            {"所属表": "结果表3", "序号": 10, "目标字段": "差旅费控平台", "源表": "Source B", "匹配字段": "金额", "逻辑说明": "筛选：产品类型!='差旅补助'"},
-            {"所属表": "结果表3", "序号": 11, "目标字段": "耗时（小时）", "源表": "Source A", "匹配字段": "交付工时", "逻辑说明": "SUM聚合 (清洗)"},
+            
+            # 更新：增加单位换算说明
+            {"所属表": "结果表3", "序号": 9, "目标字段": "差旅补助", "源表": "Source B", "匹配字段": "金额", "逻辑说明": "筛选：类型='差旅补助' | 清洗：x10000转元"},
+            {"所属表": "结果表3", "序号": 10, "目标字段": "差旅费控平台", "源表": "Source B", "匹配字段": "金额", "逻辑说明": "筛选：类型!='差旅补助' | 清洗：x10000转元"},
+            
+            {"所属表": "结果表3", "序号": 11, "目标字段": "耗时（小时）", "源表": "Source A", "匹配字段": "交付工时", "逻辑说明": "SUM聚合 (清洗去逗号)"},
             {"所属表": "结果表3", "序号": 12, "目标字段": "支持时间（人天）", "源表": "🔒 公式计算", "匹配字段": "-", "逻辑说明": "耗时 / 8"},
-            {"所属表": "结果表3", "序号": 13, "目标字段": "人力费用", "源表": "🔒 公式计算", "匹配字段": "-", "逻辑说明": "人天 * 单价"},
-            {"所属表": "结果表3", "序号": 14, "目标字段": "结算费用合计", "源表": "🔒 公式计算", "匹配字段": "-", "逻辑说明": "人力 + 差旅 + 费控"},
+            
+            # 更新：增加精度说明
+            {"所属表": "结果表3", "序号": 13, "目标字段": "人力费用", "源表": "🔒 公式计算", "匹配字段": "-", "逻辑说明": "人天 * 单价 (保留2位小数)"},
+            {"所属表": "结果表3", "序号": 14, "目标字段": "结算费用合计", "源表": "🔒 公式计算", "匹配字段": "-", "逻辑说明": "人力 + 差旅 + 费控 (保留2位小数)"},
             
             # 辅助配置
-            {"所属表": "结果表3", "序号": 15, "目标字段": "[配置] B表关联人", "源表": "Source B", "匹配字段": "出差人", "逻辑说明": "辅助：用于匹配A表人员"},
+            # 更新：增加清洗规则说明
+            {"所属表": "结果表3", "序号": 15, "目标字段": "[配置] B表关联人", "源表": "Source B", "匹配字段": "出差人", "逻辑说明": "辅助：用于匹配A表人员 (自动去'_云计算'后缀)"},
             {"所属表": "结果表3", "序号": 16, "目标字段": "[配置] B表关联SPM", "源表": "Source B", "匹配字段": "SPM", "逻辑说明": "辅助：用于匹配A表SPM"},
             {"所属表": "结果表3", "序号": 17, "目标字段": "[配置] B表类型列", "源表": "Source B", "匹配字段": "产品类型", "逻辑说明": "辅助：用于区分补助/费控"},
 
@@ -72,7 +79,7 @@ class DataEngine:
             {"所属表": "结果表2", "序号": 2, "目标字段": "销售公司", "源表": "🔒 结果表3", "匹配字段": "人事范围", "逻辑说明": "维度分组"},
             {"所属表": "结果表2", "序号": 3, "目标字段": "采购公司", "源表": "🔒 结果表3", "匹配字段": "合同主体", "逻辑说明": "维度分组"},
             {"所属表": "结果表2", "序号": 4, "目标字段": "采购部门", "源表": "🔒 结果表3", "匹配字段": "销售部门", "逻辑说明": "维度分组"},
-            {"所属表": "结果表2", "序号": 5, "目标字段": "金额（含税）", "源表": "🔒 结果表3", "匹配字段": "结算费用合计", "逻辑说明": "SUM聚合"},
+            {"所属表": "结果表2", "序号": 5, "目标字段": "金额（含税）", "源表": "🔒 结果表3", "匹配字段": "结算费用合计", "逻辑说明": "SUM聚合 (保留2位小数)"},
             {"所属表": "结果表2", "序号": 6, "目标字段": "工作量（人天）", "源表": "🔒 结果表3", "匹配字段": "支持时间（人天）", "逻辑说明": "SUM聚合"},
 
             # === 结果表 1 ===
@@ -94,6 +101,12 @@ class DataEngine:
 
     @staticmethod
     def validate(df_a, df_b, config_df, min_hours):
+        """
+        核心校验逻辑：
+        1. 检查列是否存在
+        2. 清洗数值并检查负数
+        3. 【新】按人员聚合，检查总工时是否低于 min_hours
+        """
         errors = []
         c = lambda t: DataEngine.get_col(config_df, t)
         
@@ -121,12 +134,13 @@ class DataEngine:
         for i, r in df_a_clean[df_a_clean[col_a_hrs] < 0].iterrows():
             errors.append({'类型':'数据错误', '来源':'Source A', '_sys_id':r.get('_sys_id','-'), '行号':r.get('_sys_id','-'), '信息':'工时为负'})
         
-        # 2. 按人聚合校验工时阈值
+        # 2. 【核心】按人聚合校验工时阈值
         if col_a_user and col_a_hrs and min_hours > 0:
             user_sums = df_a_clean.groupby(col_a_user)[col_a_hrs].sum()
             invalid_users = user_sums[user_sums < min_hours]
             
             for user, total_hrs in invalid_users.items():
+                # 挂载错误信息到该人员的第一条记录上
                 sample_rows = df_a_clean[df_a_clean[col_a_user] == user]
                 if not sample_rows.empty:
                     r = sample_rows.iloc[0]
@@ -161,11 +175,10 @@ class DataEngine:
         df_a[col_a_hrs] = DataEngine.clean_num(df_a, col_a_hrs)
         df_b[col_b_amt] = DataEngine.clean_num(df_b, col_b_amt)
         
-        # 【核心修正】Source B 金额单位转换：万元 -> 元
-        # 逻辑：先乘以 10000 变成元，再保留2位小数以防万一
+        # 【核心】Source B 金额单位转换：万元 -> 元
         df_b[col_b_amt] = (df_b[col_b_amt] * 10000).round(2)
 
-        # 2. B表人员名称清洗 (关联前处理)
+        # 2. 【核心】B表人员名称清洗 (去后缀)
         if col_b_user and col_b_user in df_b.columns:
             df_b[col_b_user] = df_b[col_b_user].astype(str).str.replace('_云计算', '', regex=False).str.strip()
 
@@ -181,7 +194,7 @@ class DataEngine:
         df_sub = df_b[is_sub].groupby(grp_b)[col_b_amt].sum().reset_index(name='差旅补助')
         df_fee = df_b[~is_sub].groupby(grp_b)[col_b_amt].sum().reset_index(name='差旅费控平台')
 
-        # 5. 统一数据类型 (防止 Merge 失败)
+        # 5. 统一数据类型
         for d in [df_a_gp, df_sub, df_fee]:
             k = col_a_spm if col_a_spm in d.columns else col_b_spm
             d[k] = d[k].astype(str)
@@ -192,7 +205,6 @@ class DataEngine:
         res = res.fillna(0)
 
         # 7. 最终公式计算 & 【精度控制】
-        # 保留2位小数
         res['支持时间（人天）'] = res[col_a_hrs] / 8
         res['人力费用'] = (res['支持时间（人天）'] * price_per_day).round(2)
         res['差旅补助'] = res['差旅补助'].round(2)
@@ -215,7 +227,7 @@ class DataEngine:
         if all(c in t3.columns for c in t2_cols):
             # 聚合表2也需要控制精度
             t2 = t3.groupby(t2_cols).agg({'结算费用合计':'sum', '支持时间（人天）':'sum'}).reset_index()
-            t2['结算费用合计'] = t2['结算费用合计'].round(2) 
+            t2['结算费用合计'] = t2['结算费用合计'].round(2)
             t2.columns = ['销售公司', '采购公司', '采购部门', '金额（含税，单位：元）', '工作量（人天）']
             t2.insert(0, '序号', range(1, len(t2)+1))
         else: t2 = pd.DataFrame()
@@ -304,6 +316,7 @@ class UIComponents:
         
         # 1. 准备数据
         df_display = subset[['序号', '目标字段', '源表', '匹配字段', '逻辑说明']].copy().reset_index(drop=True)
+        # 【核心】转字符串，实现居左对齐
         df_display['序号'] = df_display['序号'].astype(str)
         
         # 2. 列配置
@@ -412,6 +425,7 @@ if st.session_state.page == 'main':
         if st.session_state.is_calculated:
             UIComponents.render_download_zone(st.session_state.result_files, st.session_state.result_zip)
         
+        # 错误报告处理逻辑 (含重算按钮)
         elif st.session_state.error_report is not None:
             def fix_action():
                 @st.dialog("🛠️ 在线修复", width="large")
@@ -450,6 +464,7 @@ if st.session_state.page == 'main':
                         st.rerun()
                 show_fix()
             
+            # 渲染错误报告，并监听【重算】按钮
             should_rerun = UIComponents.render_error_report(st.session_state.error_report, fix_action)
             if should_rerun:
                 st.session_state.error_report = None
