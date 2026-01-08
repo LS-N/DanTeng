@@ -157,27 +157,38 @@ class DataEngine:
         col_b_amt = c('差旅补助')
         col_b_type = c('[配置] B表类型列')
 
+        # 1. 数值清洗
         df_a[col_a_hrs] = DataEngine.clean_num(df_a, col_a_hrs)
         df_b[col_b_amt] = DataEngine.clean_num(df_b, col_b_amt)
 
+        # 2. 【核心新增】B表人员名称清洗 (关联前处理)
+        # 规则：如果出差人列包含 "_云计算" 后缀，删除该后缀，以便与 A 表匹配
+        if col_b_user and col_b_user in df_b.columns:
+            df_b[col_b_user] = df_b[col_b_user].astype(str).str.replace('_云计算', '', regex=False).str.strip()
+
+        # 3. A表聚合
         agg_rules = {col_a_hrs: 'sum'}
         for _, col in dims_a.items():
             if col: agg_rules[col] = 'first'
         df_a_gp = df_a.groupby([col_a_user, col_a_spm], as_index=False).agg(agg_rules)
 
+        # 4. B表分流与聚合 (基于清洗后的人员名称)
         is_sub = df_b[col_b_type].astype(str).str.contains(subsidy_tag, na=False)
         grp_b = [col_b_user, col_b_spm]
         df_sub = df_b[is_sub].groupby(grp_b)[col_b_amt].sum().reset_index(name='差旅补助')
         df_fee = df_b[~is_sub].groupby(grp_b)[col_b_amt].sum().reset_index(name='差旅费控平台')
 
+        # 5. 统一数据类型 (防止 Merge 失败)
         for d in [df_a_gp, df_sub, df_fee]:
             k = col_a_spm if col_a_spm in d.columns else col_b_spm
             d[k] = d[k].astype(str)
 
+        # 6. 关联计算 (Left Join)
         res = pd.merge(df_a_gp, df_sub, left_on=[col_a_user, col_a_spm], right_on=[col_b_user, col_b_spm], how='left')
         res = pd.merge(res, df_fee, left_on=[col_a_user, col_a_spm], right_on=[col_b_user, col_b_spm], how='left')
         res = res.fillna(0)
 
+        # 7. 最终公式计算
         res['支持时间（人天）'] = res[col_a_hrs] / 8
         res['人力费用'] = res['支持时间（人天）'] * price_per_day
         res['结算费用合计'] = res['人力费用'] + res['差旅补助'] + res['差旅费控平台']
@@ -258,11 +269,9 @@ class UIComponents:
         
         st.dataframe(err_df[['类型','来源','行号','信息']], use_container_width=True, hide_index=True)
         
-        # 布局优化：下载 | 重算 | 修复
         c1, c2, c3 = st.columns([1, 1, 1])
         c1.download_button("📥 下载清单", err_df.to_csv(index=False).encode('utf-8-sig'), "err.csv", "text/csv", use_container_width=True)
         
-        # 【新增】显式触发重算按钮
         should_rerun = c2.button("🔄 参数已改，重新校验", type="secondary", use_container_width=True)
         
         if not fixable.empty:
@@ -395,7 +404,6 @@ if st.session_state.page == 'main':
         if st.session_state.is_calculated:
             UIComponents.render_download_zone(st.session_state.result_files, st.session_state.result_zip)
         
-        # 错误报告处理逻辑 (含重算)
         elif st.session_state.error_report is not None:
             def fix_action():
                 @st.dialog("🛠️ 在线修复", width="large")
@@ -413,7 +421,6 @@ if st.session_state.page == 'main':
                     
                     with t1:
                         if not da.empty:
-                            # 隐藏 _sys_id，允许编辑其他
                             na = st.data_editor(da, height=300, hide_index=True, column_config={"_sys_id": None}, key="fix_a")
                         else: st.info("无数据错误")
                     with t2:
@@ -435,11 +442,10 @@ if st.session_state.page == 'main':
                         st.rerun()
                 show_fix()
             
-            # 渲染错误报告，并监听【重算】按钮
             should_rerun = UIComponents.render_error_report(st.session_state.error_report, fix_action)
             if should_rerun:
-                st.session_state.error_report = None  # 清除错误状态
-                trigger = True # 触发重算
+                st.session_state.error_report = None
+                trigger = True
 
         elif st.session_state.block_auto_run:
             st.info("ℹ️ 源文件已更新，等待确认...")
