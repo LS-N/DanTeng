@@ -8,6 +8,7 @@ import zipfile
 try:
     import docx
     from docx.shared import Pt
+    from docx.oxml.ns import qn
     HAS_DOCX = True
 except ImportError:
     HAS_DOCX = False
@@ -161,6 +162,7 @@ class DataEngine:
         t3.insert(0, '序号', range(1, len(t3)+1))
         t3 = t3[[c for c in final_cols if c in t3.columns]]
 
+        # 表2生成逻辑：三重分组 (人事范围=销售, 合同主体=采购, 销售部门=采购部门)
         t2_cols = ['人事范围', '合同主体', '销售部门']
         if all(c in t3.columns for c in t2_cols):
             t2 = t3.groupby(t2_cols).agg({'结算费用合计':'sum', '支持时间（人天）':'sum'}).reset_index()
@@ -187,6 +189,7 @@ class WordGenerator:
     def generate(template_file, df_result, period_text):
         """
         生成 Word 结算单：按 [合同主体(采购) + 人事范围(销售) + 销售部门(采购部门)] 三重维度拆分
+        核心策略：模板锚点填充 (Template Anchor & Fill)
         """
         if not HAS_DOCX: return None, "缺少 python-docx 库"
         
@@ -194,8 +197,7 @@ class WordGenerator:
         if not all(c in df_result.columns for c in req_cols):
             return None, "数据中缺少必要列（合同主体/人事范围/销售部门），无法拆分结算单"
         
-        # 1. 识别唯一的三重组合 (采购, 销售, 部门)
-        # 对应结果表2的每一行
+        # 1. 识别唯一的三重组合 (采购, 销售, 部门) - 对应表2的每一行
         pairs = df_result[req_cols].dropna().drop_duplicates().values
         output_files = {} # {filename: bytes}
 
@@ -209,61 +211,63 @@ class WordGenerator:
             
             if df_curr.empty: continue
 
-            # 加载模板
+            # 加载模板 (Fresh Copy)
             template_file.seek(0)
             doc = docx.Document(template_file)
 
-            # --- A. 标题 (Fixed Style Header) ---
+            # --- A. 标题 (Header) ---
             # 逻辑：[采购] 与 [销售] [周期] ...
-            # 假设模板第一段或第二段是标题
-            # 技巧：这里只替换 text，会保留模板里该段落已有的居中、字体大小等样式
+            # 定位策略：假设标题在文档前两段中
             if len(doc.paragraphs) > 1:
-                title_p = doc.paragraphs[1] 
-                new_title = f"{purchase_comp}与{sales_comp}{period_text}项目交付与运维费用结算账单"
-                title_p.text = new_title 
+                title_p = doc.paragraphs[1] # 根据之前分析，P1 是标题
+                # 保留原段落样式，仅替换文本
+                title_p.text = f"{purchase_comp}与{sales_comp}{period_text}项目交付与运维费用结算账单"
 
-            # --- B. 汇总表 (Table 0 - Anchor & Fill) ---
+            # --- B. 汇总表 (Table 0 - 归一法填充) ---
             if len(doc.tables) > 0:
                 table0 = doc.tables[0]
                 
-                # 统计当前切片的数据总和
+                # 统计当前切片的数据总和 (必须与表2该行一致)
                 total_days = df_curr['支持时间（人天）'].sum()
                 total_labor = df_curr['人力费用'].sum()
                 total_sub = df_curr['差旅补助'].sum()
                 total_fee = df_curr['差旅费控平台'].sum()
                 grand_total = df_curr['结算费用合计'].sum()
                 
-                # 填充数值 (定点填充：假设数据行是 Index 4)
+                # 填充数值 (假设数据行是 Index 4)
                 if len(table0.rows) >= 5:
                     cells = table0.rows[4].cells
                     fmt = lambda x: "{:,.2f}".format(x)
                     fmt_d = lambda x: "{:,.1f}".format(x)
                     
                     if len(cells) >= 10:
+                        # 核心逻辑：所有工时/人力费用归入“标准交付”
                         cells[0].text = fmt_d(total_days) # 标准交付-工作量
-                        cells[1].text = "0.0"
-                        cells[2].text = "0.0"
+                        cells[1].text = "0.0"             # 数据治理
+                        cells[2].text = "0.0"             # 运维服务
                         cells[3].text = fmt(total_labor)  # 标准交付-费用
-                        cells[4].text = "0.00"
-                        cells[5].text = "0.00"
+                        cells[4].text = "0.00"            # 数据治理
+                        cells[5].text = "0.00"            # 运维服务
                         cells[6].text = fmt(total_sub)    # 差旅补助
                         cells[7].text = fmt(total_fee)    # 平台费用
                         cells[8].text = fmt_d(total_days) # 合计工作量
                         cells[9].text = fmt(grand_total)  # 合计费用
 
                 # 填充区域 -> 销售部门(采购部门)
+                # 假设位置在 Index 5 的第 4 格
                 if len(table0.rows) >= 6:
                     cells = table0.rows[5].cells
                     if len(cells) >= 4:
-                        cells[3].text = str(dept_name) # 回填采购部门
+                        cells[3].text = str(dept_name)
 
-            # --- C. 明细表 (Table 1 - Append Rows) ---
+            # --- C. 明细表 (Table 1 - 逐行追加) ---
             if len(doc.tables) > 1:
                 table1 = doc.tables[1]
-                # 清空旧数据 (保留表头)
+                # 清空旧数据 (倒序删除，保留表头 Row 0)
                 for i in range(len(table1.rows)-1, 0, -1):
                     table1._tbl.remove(table1.rows[i]._tr)
                 
+                # 映射列顺序
                 cols_map = [
                     '人员', '人事范围', '所属项目', '合同主体', '销售人员', '销售部门', 
                     '支持时间（人天）', '人力费用', '差旅补助', '差旅费控平台', '结算费用合计'
@@ -271,6 +275,8 @@ class WordGenerator:
                 
                 for _, row in df_curr.iterrows():
                     new_row = table1.add_row()
+                    # 复制上一行(表头?)的某些样式属性略复杂，这里直接填值
+                    # python-docx 的 add_row 会自动继承表格的默认样式
                     for i, col_name in enumerate(cols_map):
                         if i < len(new_row.cells):
                             val = row.get(col_name, '')
@@ -284,9 +290,9 @@ class WordGenerator:
 
             out = io.BytesIO()
             doc.save(out)
-            # 文件名安全处理
+            # 文件名：结算单_采购_销售_部门_周期.docx
             safe_dept = str(dept_name).replace('/', '_').replace('\\', '_')
-            fname = f"结算单_{purchase_comp}_{sales_comp}_{safe_dept}.docx"
+            fname = f"结算单_{purchase_comp}_{sales_comp}_{safe_dept}_{period_text}.docx"
             output_files[fname] = out.getvalue()
 
         return output_files, None
