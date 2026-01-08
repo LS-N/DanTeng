@@ -94,6 +94,12 @@ class DataEngine:
 
     @staticmethod
     def validate(df_a, df_b, config_df, min_hours):
+        """
+        核心校验逻辑：
+        1. 检查列是否存在
+        2. 清洗数值并检查负数
+        3. 【新】按人员聚合，检查总工时是否低于 min_hours
+        """
         errors = []
         c = lambda t: DataEngine.get_col(config_df, t)
         
@@ -115,11 +121,31 @@ class DataEngine:
         
         if not (valid_a and valid_b): return errors, df_a, df_b
 
+        # 1. 基础清洗与负数校验
         df_a_clean = df_a.copy()
         df_a_clean[col_a_hrs] = DataEngine.clean_num(df_a_clean, col_a_hrs)
         for i, r in df_a_clean[df_a_clean[col_a_hrs] < 0].iterrows():
             errors.append({'类型':'数据错误', '来源':'Source A', '_sys_id':r.get('_sys_id','-'), '行号':r.get('_sys_id','-'), '信息':'工时为负'})
         
+        # 2. 【核心补充逻辑】按人聚合校验工时阈值
+        if col_a_user and col_a_hrs and min_hours > 0:
+            user_sums = df_a_clean.groupby(col_a_user)[col_a_hrs].sum()
+            # 筛选出总工时小于阈值的人员
+            invalid_users = user_sums[user_sums < min_hours]
+            
+            for user, total_hrs in invalid_users.items():
+                # 挂载错误信息到该人员的第一条记录上，方便展示
+                sample_rows = df_a_clean[df_a_clean[col_a_user] == user]
+                if not sample_rows.empty:
+                    r = sample_rows.iloc[0]
+                    errors.append({
+                        '类型': '业务规则校验', 
+                        '来源': 'Source A',
+                        '_sys_id': r.get('_sys_id', '-'),
+                        '行号': r.get('_sys_id', '-'), 
+                        '信息': f'人员【{user}】总工时({total_hrs}h) 低于阈值({min_hours}h)'
+                    })
+
         return errors, df_a, df_b
 
     @staticmethod
@@ -231,8 +257,9 @@ class UIComponents:
     def render_error_report(err_df, on_fix):
         fixable = err_df[err_df['类型']=='数据错误']
         logic = err_df[err_df['类型']=='逻辑错误']
+        rule = err_df[err_df['类型']=='业务规则校验']
         
-        st.markdown(f"<div class='error-box'><h3 style='margin:0'>🚨 校验失败</h3><p>发现 <b>{len(fixable)}</b> 个数据错误，<b>{len(logic)}</b> 个逻辑错误。</p></div>", unsafe_allow_html=True)
+        st.markdown(f"<div class='error-box'><h3 style='margin:0'>🚨 校验失败</h3><p>发现 <b>{len(fixable)}</b> 个数据错误，<b>{len(rule)}</b> 个规则异常，<b>{len(logic)}</b> 个映射错误。</p></div>", unsafe_allow_html=True)
         
         st.dataframe(err_df[['类型','来源','行号','信息']], use_container_width=True, hide_index=True)
         
