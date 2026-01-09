@@ -220,8 +220,9 @@ class WordGenerator:
         trHeight = OxmlElement('w:trHeight')
         # 1cm ≈ 567 twips (Word单位)
         trHeight.set(qn('w:val'), str(int(height_cm * 567))) 
-        # 使用 'exact' 或 'atLeast'。此处用 atLeast 保证内容如果溢出不会完全被切掉，但尽量贴合
-        # 为了绝对复刻高度，建议用 atLeast，因为 exact 可能会切掉字母下缘
+        # 为了绝对复刻高度，使用 exact 固定高度（atLeast可能会被内容撑大，但exact更符合"复刻"要求）
+        # 如果内容过多会导致被切断，但根据您的尺寸要求，这里使用 atLeast 兼容性更好
+        # 若必须强制尺寸不被撑大，可改为 "exact"
         trHeight.set(qn('w:hRule'), "atLeast") 
         trPr.append(trHeight)
 
@@ -237,7 +238,7 @@ class WordGenerator:
         section.right_margin = Cm(2.0)
 
         # 2. 页面标题（表格外，两行结构）
-        # 文档标题距离页眉 1倍行距 (约12-14pt)
+        # 距离页眉1倍行距 (约12-14pt)
         
         # 行1：公司名称组合 (4号=14pt, 加粗)
         p1 = doc.add_paragraph()
@@ -250,19 +251,21 @@ class WordGenerator:
         run1.font.size = Pt(14)
         run1.font.bold = True
         
-        # 行2：账单名称 (4号=14pt, 加粗)
+        # 行2：账单名称 (4号=14pt, 不加粗)
         p2 = doc.add_paragraph()
         p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p2.paragraph_format.space_after = Pt(14) # 下方留白，避免贴表格太近
-        p2.paragraph_format.line_spacing = 1.0   # 单倍行距
+        p2.paragraph_format.space_after = Pt(0) # 紧贴表格或留少量白
+        p2.paragraph_format.line_spacing = 1.0  # 单倍行距
         run2 = p2.add_run(f"{period_text}项目交付与运维费用结算账单")
         run2.font.name = 'SimSun'
         run2._element.rPr.rFonts.set(qn('w:eastAsia'), 'SimSun')
         run2.font.size = Pt(14)
-        run2.font.bold = True
+        run2.font.bold = False # 【修正】文档标题第二行不加粗
         
+        doc.add_paragraph() # 空一行
+
         # 3. 绘制【汇总表】
-        # 7行: 2行内部标题 + 2行表头 + 1行数据 + 1行部门 + 1行签字
+        # 7行
         table0 = doc.add_table(rows=7, cols=10)
         table0.style = 'Table Grid'
         table0.autofit = False 
@@ -275,7 +278,7 @@ class WordGenerator:
                 row.cells[idx].width = Cm(width)
 
         # --- Row 0: 表内大标题1 (公司名) ---
-        # 高度 1.63cm, 加粗, 10号(10pt)
+        # 高度 1.63cm, 加粗, 10号
         WordGenerator.set_row_height(table0.rows[0], 1.63)
         r0 = table0.rows[0]
         c0 = r0.cells[0].merge(r0.cells[9])
@@ -343,7 +346,7 @@ class WordGenerator:
         WordGenerator.set_cell_style(cell_sign_area, sign_text, align="left", bold=False, font_size=10)
 
         # 4. 间距 (表格到费用详单距离: 3倍行距)
-        # 1行距约12pt, 3倍约36pt
+        # 1行距约12-14pt, 3倍约36-42pt
         p_gap = doc.add_paragraph()
         p_gap.paragraph_format.space_before = Pt(36) 
         run_gap = p_gap.add_run("费用详单：")
@@ -407,6 +410,7 @@ class WordGenerator:
 
             cells = table0.rows[4].cells
             
+            # 数据行 (Row 4) 格式：10号，不加粗
             WordGenerator.set_cell_style(cells[0], fmt_d(total_days), font_size=10) # 标准交付-工时
             WordGenerator.set_cell_style(cells[1], "0.0", font_size=10)
             WordGenerator.set_cell_style(cells[2], "0.0", font_size=10)
@@ -428,7 +432,7 @@ class WordGenerator:
 
             for _, row in df_curr.iterrows():
                 new_row = table1.add_row()
-                # 数据行高 2.27cm
+                # 明细数据行高 2.27cm
                 WordGenerator.set_row_height(new_row, 2.27)
                 
                 for i, col_name in enumerate(cols_map_df):
