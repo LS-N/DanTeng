@@ -9,10 +9,10 @@ import zipfile
 # ==============================================================================
 try:
     import docx
-    from docx.shared import Pt, Cm
+    from docx.shared import Pt, Cm, RGBColor
     from docx.oxml.ns import qn
     from docx.oxml import OxmlElement
-    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
     from docx.enum.table import WD_ALIGN_VERTICAL, WD_ROW_HEIGHT_RULE
     HAS_DOCX = True
 except ImportError:
@@ -192,6 +192,9 @@ class DataEngine:
 class WordGenerator:
     @staticmethod
     def set_cell_style(cell, text, font_size=10, bold=False, align="center"):
+        """
+        全宋体格式设置
+        """
         cell.text = ""
         paragraph = cell.paragraphs[0]
         
@@ -202,18 +205,24 @@ class WordGenerator:
         run = paragraph.add_run(str(text))
         run.font.bold = bold
         run.font.size = Pt(font_size)
-        run.font.name = 'Times New Roman'
-        run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+        
+        # 强制所有字体（包括数字英文）使用宋体 (SimSun)
+        run.font.name = 'SimSun' 
+        run._element.rPr.rFonts.set(qn('w:eastAsia'), 'SimSun')
+        
         cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
 
     @staticmethod
     def set_row_height(row, height_cm):
-        """强制设置行高"""
+        """强制设置行高 (精确值)"""
         tr = row._tr
         trPr = tr.get_or_add_trPr()
         trHeight = OxmlElement('w:trHeight')
-        trHeight.set(qn('w:val'), str(int(height_cm * 567))) # 1cm approx 567 twips
-        trHeight.set(qn('w:hRule'), "atLeast")
+        # 1cm ≈ 567 twips (Word单位)
+        trHeight.set(qn('w:val'), str(int(height_cm * 567))) 
+        # 使用 'exact' 或 'atLeast'。此处用 atLeast 保证内容如果溢出不会完全被切掉，但尽量贴合
+        # 为了绝对复刻高度，建议用 atLeast，因为 exact 可能会切掉字母下缘
+        trHeight.set(qn('w:hRule'), "atLeast") 
         trPr.append(trHeight)
 
     @staticmethod
@@ -228,111 +237,134 @@ class WordGenerator:
         section.right_margin = Cm(2.0)
 
         # 2. 页面标题（表格外，两行结构）
-        # 行1：公司名称组合 (大号字)
+        # 文档标题距离页眉 1倍行距 (约12-14pt)
+        
+        # 行1：公司名称组合 (4号=14pt, 加粗)
         p1 = doc.add_paragraph()
         p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p1.paragraph_format.space_before = Pt(14) # 约1倍行距
+        p1.paragraph_format.line_spacing = 1.0    # 单倍行距
         run1 = p1.add_run(f"{purchase_comp}与{sales_comp}")
-        run1.font.name = 'Times New Roman'
-        run1._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
-        run1.font.size = Pt(16)
+        run1.font.name = 'SimSun'
+        run1._element.rPr.rFonts.set(qn('w:eastAsia'), 'SimSun')
+        run1.font.size = Pt(14)
         run1.font.bold = True
         
-        # 行2：账单名称 (中号字)
+        # 行2：账单名称 (4号=14pt, 加粗)
         p2 = doc.add_paragraph()
         p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        p2.paragraph_format.space_after = Pt(14) # 下方留白，避免贴表格太近
+        p2.paragraph_format.line_spacing = 1.0   # 单倍行距
         run2 = p2.add_run(f"{period_text}项目交付与运维费用结算账单")
-        run2.font.name = 'Times New Roman'
-        run2._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+        run2.font.name = 'SimSun'
+        run2._element.rPr.rFonts.set(qn('w:eastAsia'), 'SimSun')
         run2.font.size = Pt(14)
         run2.font.bold = True
         
-        doc.add_paragraph() # 空一行
-
         # 3. 绘制【汇总表】
-        # 结构变化：7行 (2行内部标题 + 2行表头 + 1行数据 + 1行部门 + 1行签字)
+        # 7行: 2行内部标题 + 2行表头 + 1行数据 + 1行部门 + 1行签字
         table0 = doc.add_table(rows=7, cols=10)
         table0.style = 'Table Grid'
         table0.autofit = False 
         table0.allow_autofit = False
 
-        # --- [关键步骤] 锁定列宽 ---
-        # 10列总宽约17cm。前3列(工作量)需要稍窄以容纳字多的部门名
+        # --- 锁定列宽 (前3列稍窄) ---
         col_widths = [1.3, 1.3, 1.3, 1.6, 1.6, 1.6, 1.6, 1.8, 1.3, 2.0] # 单位cm
         for row in table0.rows:
             for idx, width in enumerate(col_widths):
                 row.cells[idx].width = Cm(width)
 
         # --- Row 0: 表内大标题1 (公司名) ---
+        # 高度 1.63cm, 加粗, 10号(10pt)
+        WordGenerator.set_row_height(table0.rows[0], 1.63)
         r0 = table0.rows[0]
         c0 = r0.cells[0].merge(r0.cells[9])
-        WordGenerator.set_cell_style(c0, f"{purchase_comp}与{sales_comp}", bold=True, font_size=11)
+        WordGenerator.set_cell_style(c0, f"{purchase_comp}与{sales_comp}", bold=True, font_size=10)
 
         # --- Row 1: 表内大标题2 (账单名) ---
+        # 高度 1.63cm, 不加粗, 10号
+        WordGenerator.set_row_height(table0.rows[1], 1.63)
         r1 = table0.rows[1]
         c1 = r1.cells[0].merge(r1.cells[9])
-        WordGenerator.set_cell_style(c1, f"{period_text}项目交付与运维费用结算账单", bold=True, font_size=10)
+        WordGenerator.set_cell_style(c1, f"{period_text}项目交付与运维费用结算账单", bold=False, font_size=10)
 
-        # --- Row 2: 表头第一层 (工作量/人力费用/差旅...) ---
+        # --- Row 2: 表头第一层 (工作量/人力费用...) ---
+        # 高度 0.92cm, 不加粗, 10号
+        WordGenerator.set_row_height(table0.rows[2], 0.92)
         r2 = table0.rows[2]
         c_work = r2.cells[0].merge(r2.cells[2])
-        WordGenerator.set_cell_style(c_work, "工作量 (单位:人/天)", bold=True, font_size=9)
+        WordGenerator.set_cell_style(c_work, "工作量 (单位:人/天)", bold=False, font_size=10)
         
         c_labor = r2.cells[3].merge(r2.cells[5])
-        WordGenerator.set_cell_style(c_labor, "人力费用 (单位:元)", bold=True, font_size=9)
+        WordGenerator.set_cell_style(c_labor, "人力费用 (单位:元)", bold=False, font_size=10)
         
         c_travel = r2.cells[6].merge(r2.cells[7])
-        WordGenerator.set_cell_style(c_travel, "差旅费用 (单位:元)", bold=True, font_size=9)
+        WordGenerator.set_cell_style(c_travel, "差旅费用 (单位:元)", bold=False, font_size=10)
         
         c_total = r2.cells[8].merge(r2.cells[9])
-        WordGenerator.set_cell_style(c_total, "合计", bold=True, font_size=9)
+        WordGenerator.set_cell_style(c_total, "合计", bold=False, font_size=10)
 
-        # --- Row 3: 表头第二层 (标准交付/数据治理...) ---
+        # --- Row 3: 表头第二层 (标准交付...) ---
+        # 高度 0.92cm, 不加粗, 10号
+        WordGenerator.set_row_height(table0.rows[3], 0.92)
         headers = [
             "项目标准交付", "项目数据治理", "项目运维服务", 
             "项目标准交付", "项目数据治理", "项目运维服务", 
             "差旅补助", "商旅平台费用", "工作量", "合计费用 (单位:元)"
         ]
         for i, h in enumerate(headers):
-            WordGenerator.set_cell_style(table0.rows[3].cells[i], h, font_size=8)
+            WordGenerator.set_cell_style(table0.rows[3].cells[i], h, bold=False, font_size=10)
 
         # --- Row 4: 数据行 (稍后填充) ---
+        # 高度 0.92cm
+        WordGenerator.set_row_height(table0.rows[4], 0.92)
         
-        # --- Row 5: 部门行 (对齐优化) ---
+        # --- Row 5: 部门行 ---
+        # 高度 1.13cm
+        WordGenerator.set_row_height(table0.rows[5], 1.13)
         r5 = table0.rows[5]
-        # 【核心修改】合并前3列，强制与上方"工作量"对齐
+        # 合并前3列
         cell_dept_label = r5.cells[0].merge(r5.cells[2]) 
-        WordGenerator.set_cell_style(cell_dept_label, "项目所属区域", bold=True, font_size=9)
-        
-        # 合并剩余列放部门名称
+        WordGenerator.set_cell_style(cell_dept_label, "项目所属区域", bold=False, font_size=10)
+        # 合并剩余列
         cell_dept_val = r5.cells[3].merge(r5.cells[9])
-        WordGenerator.set_cell_style(cell_dept_val, str(dept_name), align="left", font_size=9)
+        WordGenerator.set_cell_style(cell_dept_val, str(dept_name), align="left", bold=False, font_size=10)
 
         # --- Row 6: 签字行 ---
+        # 高度 4.17cm
+        WordGenerator.set_row_height(table0.rows[6], 4.17)
         r6 = table0.rows[6]
-        WordGenerator.set_row_height(r6, 1.5) # 强制行高 1.5cm
-        
-        # 【核心修改】同样合并前3列，保持左侧整齐
+        # 合并前3列
         cell_sign_label = r6.cells[0].merge(r6.cells[2])
-        WordGenerator.set_cell_style(cell_sign_label, "项目所属区域销售确认", bold=True, font_size=9)
-        
+        WordGenerator.set_cell_style(cell_sign_label, "项目所属区域销售确认", bold=False, font_size=10)
+        # 合并剩余列
         cell_sign_area = r6.cells[3].merge(r6.cells[9])
         sign_text = "确认意见：\t\t\t\t签字（签章）：\t\t\t\t日期：    年    月    日"
-        WordGenerator.set_cell_style(cell_sign_area, sign_text, align="left", font_size=9)
+        WordGenerator.set_cell_style(cell_sign_area, sign_text, align="left", bold=False, font_size=10)
 
-        doc.add_paragraph("\n费用详单：")
+        # 4. 间距 (表格到费用详单距离: 3倍行距)
+        # 1行距约12pt, 3倍约36pt
+        p_gap = doc.add_paragraph()
+        p_gap.paragraph_format.space_before = Pt(36) 
+        run_gap = p_gap.add_run("费用详单：")
+        run_gap.font.name = 'SimSun'
+        run_gap._element.rPr.rFonts.set(qn('w:eastAsia'), 'SimSun')
+        run_gap.font.size = Pt(10)
 
-        # 4. 绘制【明细表】
+        # 5. 绘制【明细表】
         table1 = doc.add_table(rows=1, cols=11)
         table1.style = 'Table Grid'
         
+        # --- Row 0: 明细表头 ---
+        # 高度 1.46cm, 不加粗, 10号
+        WordGenerator.set_row_height(table1.rows[0], 1.46)
         cols_text = [
             '人员', '人事范围', '项目名称', '项目合同主体', 
             '销售人员', '销售所在大区', '支持人天', '人力费用', 
             '差旅补助', '差旅平台费用', '总费用（元）'
         ]
-        
         for i, c in enumerate(cols_text):
-            WordGenerator.set_cell_style(table1.rows[0].cells[i], c, bold=True, font_size=8)
+            WordGenerator.set_cell_style(table1.rows[0].cells[i], c, bold=False, font_size=10)
 
         return doc
 
@@ -362,7 +394,6 @@ class WordGenerator:
             doc = WordGenerator.create_hardcoded_template(purchase_comp, sales_comp, dept_name, period_text)
 
             # 2. 填充数据 - 汇总表 (Table 0)
-            # 注意：因为增加了两行标题，数据行现在是 Index 4
             table0 = doc.tables[0]
             
             total_days = df_curr['支持时间（人天）'].sum()
@@ -376,16 +407,16 @@ class WordGenerator:
 
             cells = table0.rows[4].cells
             
-            WordGenerator.set_cell_style(cells[0], fmt_d(total_days), font_size=9) # 标准交付-工时
-            WordGenerator.set_cell_style(cells[1], "0.0", font_size=9)
-            WordGenerator.set_cell_style(cells[2], "0.0", font_size=9)
-            WordGenerator.set_cell_style(cells[3], fmt(total_labor), font_size=9)
-            WordGenerator.set_cell_style(cells[4], "0.00", font_size=9)
-            WordGenerator.set_cell_style(cells[5], "0.00", font_size=9)
-            WordGenerator.set_cell_style(cells[6], fmt(total_sub), font_size=9)
-            WordGenerator.set_cell_style(cells[7], fmt(total_fee), font_size=9)
-            WordGenerator.set_cell_style(cells[8], fmt_d(total_days), font_size=9)
-            WordGenerator.set_cell_style(cells[9], fmt(grand_total), font_size=9)
+            WordGenerator.set_cell_style(cells[0], fmt_d(total_days), font_size=10) # 标准交付-工时
+            WordGenerator.set_cell_style(cells[1], "0.0", font_size=10)
+            WordGenerator.set_cell_style(cells[2], "0.0", font_size=10)
+            WordGenerator.set_cell_style(cells[3], fmt(total_labor), font_size=10)
+            WordGenerator.set_cell_style(cells[4], "0.00", font_size=10)
+            WordGenerator.set_cell_style(cells[5], "0.00", font_size=10)
+            WordGenerator.set_cell_style(cells[6], fmt(total_sub), font_size=10)
+            WordGenerator.set_cell_style(cells[7], fmt(total_fee), font_size=10)
+            WordGenerator.set_cell_style(cells[8], fmt_d(total_days), font_size=10)
+            WordGenerator.set_cell_style(cells[9], fmt(grand_total), font_size=10)
 
             # 3. 填充明细表
             table1 = doc.tables[1]
@@ -397,6 +428,9 @@ class WordGenerator:
 
             for _, row in df_curr.iterrows():
                 new_row = table1.add_row()
+                # 数据行高 2.27cm
+                WordGenerator.set_row_height(new_row, 2.27)
+                
                 for i, col_name in enumerate(cols_map_df):
                     val = row.get(col_name, '')
                     text_val = ""
@@ -408,16 +442,18 @@ class WordGenerator:
                     else:
                         text_val = str(val)
                     
-                    WordGenerator.set_cell_style(new_row.cells[i], text_val, font_size=8)
+                    WordGenerator.set_cell_style(new_row.cells[i], text_val, bold=False, font_size=10)
             
-            # 增加明细表合计行
+            # 增加明细表合计行 (也算作数据行，高度 2.27cm)
             sum_row = table1.add_row()
-            WordGenerator.set_cell_style(sum_row.cells[0], "合计", bold=True, font_size=8)
-            WordGenerator.set_cell_style(sum_row.cells[6], fmt_d(total_days), bold=True, font_size=8)
-            WordGenerator.set_cell_style(sum_row.cells[7], fmt(total_labor), bold=True, font_size=8)
-            WordGenerator.set_cell_style(sum_row.cells[8], fmt(total_sub), bold=True, font_size=8)
-            WordGenerator.set_cell_style(sum_row.cells[9], fmt(total_fee), bold=True, font_size=8)
-            WordGenerator.set_cell_style(sum_row.cells[10], fmt(grand_total), bold=True, font_size=8)
+            WordGenerator.set_row_height(sum_row, 2.27)
+            
+            WordGenerator.set_cell_style(sum_row.cells[0], "合计", bold=False, font_size=10)
+            WordGenerator.set_cell_style(sum_row.cells[6], fmt_d(total_days), bold=False, font_size=10)
+            WordGenerator.set_cell_style(sum_row.cells[7], fmt(total_labor), bold=False, font_size=10)
+            WordGenerator.set_cell_style(sum_row.cells[8], fmt(total_sub), bold=False, font_size=10)
+            WordGenerator.set_cell_style(sum_row.cells[9], fmt(total_fee), bold=False, font_size=10)
+            WordGenerator.set_cell_style(sum_row.cells[10], fmt(grand_total), bold=False, font_size=10)
 
             out = io.BytesIO()
             doc.save(out)
