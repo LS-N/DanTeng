@@ -11,8 +11,9 @@ try:
     import docx
     from docx.shared import Pt, Cm
     from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
     from docx.enum.text import WD_ALIGN_PARAGRAPH
-    from docx.enum.table import WD_ALIGN_VERTICAL
+    from docx.enum.table import WD_ALIGN_VERTICAL, WD_ROW_HEIGHT_RULE
     HAS_DOCX = True
 except ImportError:
     HAS_DOCX = False
@@ -25,7 +26,6 @@ st.set_page_config(page_title="淡藤财务报表 Pro", page_icon="😈", layout
 def inject_css():
     st.markdown("""
     <style>
-        /* 强制深色背景适配，防止与 config.toml 冲突 */
         :root { --bg-color: #0d1117; --card-bg: #161b22; --accent: #238636; --text: #c9d1d9; --border-color: #555c65; }
         .stApp { background-color: var(--bg-color); color: var(--text); }
         .nav-header { font-size: 1.2rem; font-weight: bold; display:flex; align-items:center; height: 100%; }
@@ -192,31 +192,29 @@ class DataEngine:
 class WordGenerator:
     @staticmethod
     def set_cell_style(cell, text, font_size=10, bold=False, align="center"):
-        """
-        核心辅助函数：强制设置单元格内的字体（中英文混排）、大小、对齐
-        解决默认字体不是宋体的问题
-        """
-        # 清除旧内容
         cell.text = ""
         paragraph = cell.paragraphs[0]
         
-        # 设置对齐
-        if align == "center":
-            paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        elif align == "left":
-            paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        elif align == "right":
-            paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        if align == "center": paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        elif align == "left": paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
+        elif align == "right": paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
 
         run = paragraph.add_run(str(text))
         run.font.bold = bold
         run.font.size = Pt(font_size)
         run.font.name = 'Times New Roman'
-        # 强制设置中文字体为宋体
         run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
-        
-        # 垂直居中
         cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
+
+    @staticmethod
+    def set_row_height(row, height_cm):
+        """强制设置行高"""
+        tr = row._tr
+        trPr = tr.get_or_add_trPr()
+        trHeight = OxmlElement('w:trHeight')
+        trHeight.set(qn('w:val'), str(int(height_cm * 567))) # 1cm approx 567 twips
+        trHeight.set(qn('w:hRule'), "atLeast")
+        trPr.append(trHeight)
 
     @staticmethod
     def create_hardcoded_template(purchase_comp, sales_comp, dept_name, period_text):
@@ -229,62 +227,101 @@ class WordGenerator:
         section.left_margin = Cm(2.0)
         section.right_margin = Cm(2.0)
 
-        # 2. 大标题
-        p = doc.add_paragraph()
-        p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        run = p.add_run(f"{purchase_comp}与{sales_comp},{period_text}项目交付与运维费用结算账单")
-        run.font.name = 'Times New Roman'
-        run._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
-        run.font.size = Pt(16)
-        run.font.bold = True
+        # 2. 页面标题（表格外，两行结构）
+        # 行1：公司名称组合 (大号字)
+        p1 = doc.add_paragraph()
+        p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run1 = p1.add_run(f"{purchase_comp}与{sales_comp}")
+        run1.font.name = 'Times New Roman'
+        run1._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+        run1.font.size = Pt(16)
+        run1.font.bold = True
+        
+        # 行2：账单名称 (中号字)
+        p2 = doc.add_paragraph()
+        p2.alignment = WD_ALIGN_PARAGRAPH.CENTER
+        run2 = p2.add_run(f"{period_text}项目交付与运维费用结算账单")
+        run2.font.name = 'Times New Roman'
+        run2._element.rPr.rFonts.set(qn('w:eastAsia'), '宋体')
+        run2.font.size = Pt(14)
+        run2.font.bold = True
         
         doc.add_paragraph() # 空一行
 
         # 3. 绘制【汇总表】
-        # 6 行 10 列
-        table0 = doc.add_table(rows=6, cols=10)
+        # 结构变化：7行 (2行内部标题 + 2行表头 + 1行数据 + 1行部门 + 1行签字)
+        table0 = doc.add_table(rows=7, cols=10)
         table0.style = 'Table Grid'
         table0.autofit = False 
+        table0.allow_autofit = False
 
-        # --- 设置表头第一层 (行0) ---
+        # --- [关键步骤] 锁定列宽 ---
+        # 10列总宽约17cm。前3列(工作量)需要稍窄以容纳字多的部门名
+        col_widths = [1.3, 1.3, 1.3, 1.6, 1.6, 1.6, 1.6, 1.8, 1.3, 2.0] # 单位cm
+        for row in table0.rows:
+            for idx, width in enumerate(col_widths):
+                row.cells[idx].width = Cm(width)
+
+        # --- Row 0: 表内大标题1 (公司名) ---
         r0 = table0.rows[0]
-        c0 = r0.cells[0].merge(r0.cells[2])
-        WordGenerator.set_cell_style(c0, "工作量 （单位：人/天）", bold=True)
-        
-        c1 = r0.cells[3].merge(r0.cells[5])
-        WordGenerator.set_cell_style(c1, "人力费用 （单位：元）", bold=True)
-        
-        c2 = r0.cells[6].merge(r0.cells[7])
-        WordGenerator.set_cell_style(c2, "差旅费用 （单位：元）", bold=True)
-        
-        c3 = r0.cells[8].merge(r0.cells[9])
-        WordGenerator.set_cell_style(c3, "合计", bold=True)
+        c0 = r0.cells[0].merge(r0.cells[9])
+        WordGenerator.set_cell_style(c0, f"{purchase_comp}与{sales_comp}", bold=True, font_size=11)
 
-        # --- 设置表头第二层 (行1) ---
+        # --- Row 1: 表内大标题2 (账单名) ---
+        r1 = table0.rows[1]
+        c1 = r1.cells[0].merge(r1.cells[9])
+        WordGenerator.set_cell_style(c1, f"{period_text}项目交付与运维费用结算账单", bold=True, font_size=10)
+
+        # --- Row 2: 表头第一层 (工作量/人力费用/差旅...) ---
+        r2 = table0.rows[2]
+        c_work = r2.cells[0].merge(r2.cells[2])
+        WordGenerator.set_cell_style(c_work, "工作量 (单位:人/天)", bold=True, font_size=9)
+        
+        c_labor = r2.cells[3].merge(r2.cells[5])
+        WordGenerator.set_cell_style(c_labor, "人力费用 (单位:元)", bold=True, font_size=9)
+        
+        c_travel = r2.cells[6].merge(r2.cells[7])
+        WordGenerator.set_cell_style(c_travel, "差旅费用 (单位:元)", bold=True, font_size=9)
+        
+        c_total = r2.cells[8].merge(r2.cells[9])
+        WordGenerator.set_cell_style(c_total, "合计", bold=True, font_size=9)
+
+        # --- Row 3: 表头第二层 (标准交付/数据治理...) ---
         headers = [
             "项目标准交付", "项目数据治理", "项目运维服务", 
             "项目标准交付", "项目数据治理", "项目运维服务", 
-            "差旅补助", "商旅平台费用", "工作量", "合计费用（单位：元）"
+            "差旅补助", "商旅平台费用", "工作量", "合计费用 (单位:元)"
         ]
         for i, h in enumerate(headers):
-            WordGenerator.set_cell_style(table0.rows[1].cells[i], h, font_size=9)
+            WordGenerator.set_cell_style(table0.rows[3].cells[i], h, font_size=8)
 
-        # --- 部门行 (行4) ---
-        r4 = table0.rows[4]
-        WordGenerator.set_cell_style(r4.cells[0], "项目所属区域", bold=True)
-        merged_dept = r4.cells[1].merge(r4.cells[9])
-        WordGenerator.set_cell_style(merged_dept, str(dept_name), align="left")
-
-        # --- 签字行 (行5) ---
+        # --- Row 4: 数据行 (稍后填充) ---
+        
+        # --- Row 5: 部门行 (对齐优化) ---
         r5 = table0.rows[5]
-        WordGenerator.set_cell_style(r5.cells[0], "项目所属区域销售确认", bold=True)
-        merged_sign = r5.cells[1].merge(r5.cells[9])
+        # 【核心修改】合并前3列，强制与上方"工作量"对齐
+        cell_dept_label = r5.cells[0].merge(r5.cells[2]) 
+        WordGenerator.set_cell_style(cell_dept_label, "项目所属区域", bold=True, font_size=9)
+        
+        # 合并剩余列放部门名称
+        cell_dept_val = r5.cells[3].merge(r5.cells[9])
+        WordGenerator.set_cell_style(cell_dept_val, str(dept_name), align="left", font_size=9)
+
+        # --- Row 6: 签字行 ---
+        r6 = table0.rows[6]
+        WordGenerator.set_row_height(r6, 1.5) # 强制行高 1.5cm
+        
+        # 【核心修改】同样合并前3列，保持左侧整齐
+        cell_sign_label = r6.cells[0].merge(r6.cells[2])
+        WordGenerator.set_cell_style(cell_sign_label, "项目所属区域销售确认", bold=True, font_size=9)
+        
+        cell_sign_area = r6.cells[3].merge(r6.cells[9])
         sign_text = "确认意见：\t\t\t\t签字（签章）：\t\t\t\t日期：    年    月    日"
-        WordGenerator.set_cell_style(merged_sign, sign_text, align="left")
+        WordGenerator.set_cell_style(cell_sign_area, sign_text, align="left", font_size=9)
 
         doc.add_paragraph("\n费用详单：")
 
-        # 4. 绘制【明细表】表头
+        # 4. 绘制【明细表】
         table1 = doc.add_table(rows=1, cols=11)
         table1.style = 'Table Grid'
         
@@ -295,7 +332,7 @@ class WordGenerator:
         ]
         
         for i, c in enumerate(cols_text):
-            WordGenerator.set_cell_style(table1.rows[0].cells[i], c, bold=True, font_size=9)
+            WordGenerator.set_cell_style(table1.rows[0].cells[i], c, bold=True, font_size=8)
 
         return doc
 
@@ -313,7 +350,6 @@ class WordGenerator:
         output_files = {}
 
         for purchase_comp, sales_comp, dept_name in pairs:
-            # 筛选数据
             df_curr = df_result[
                 (df_result['合同主体'] == purchase_comp) & 
                 (df_result['人事范围'] == sales_comp) &
@@ -322,10 +358,11 @@ class WordGenerator:
             
             if df_curr.empty: continue
 
-            # 1. 动态“画”出模板
+            # 1. 生成模板
             doc = WordGenerator.create_hardcoded_template(purchase_comp, sales_comp, dept_name, period_text)
 
             # 2. 填充数据 - 汇总表 (Table 0)
+            # 注意：因为增加了两行标题，数据行现在是 Index 4
             table0 = doc.tables[0]
             
             total_days = df_curr['支持时间（人天）'].sum()
@@ -337,21 +374,20 @@ class WordGenerator:
             fmt = lambda x: "{:,.2f}".format(x)
             fmt_d = lambda x: "{:,.1f}".format(x)
 
-            # 定位数据行 (Index 2)
-            cells = table0.rows[2].cells
+            cells = table0.rows[4].cells
             
-            WordGenerator.set_cell_style(cells[0], fmt_d(total_days)) # 标准交付-工时
-            WordGenerator.set_cell_style(cells[1], "0.0")             # 数据治理
-            WordGenerator.set_cell_style(cells[2], "0.0")             # 运维
-            WordGenerator.set_cell_style(cells[3], fmt(total_labor))  # 标准交付-费用
-            WordGenerator.set_cell_style(cells[4], "0.00")
-            WordGenerator.set_cell_style(cells[5], "0.00")
-            WordGenerator.set_cell_style(cells[6], fmt(total_sub))
-            WordGenerator.set_cell_style(cells[7], fmt(total_fee))
-            WordGenerator.set_cell_style(cells[8], fmt_d(total_days)) # 合计工时
-            WordGenerator.set_cell_style(cells[9], fmt(grand_total))  # 合计费用
+            WordGenerator.set_cell_style(cells[0], fmt_d(total_days), font_size=9) # 标准交付-工时
+            WordGenerator.set_cell_style(cells[1], "0.0", font_size=9)
+            WordGenerator.set_cell_style(cells[2], "0.0", font_size=9)
+            WordGenerator.set_cell_style(cells[3], fmt(total_labor), font_size=9)
+            WordGenerator.set_cell_style(cells[4], "0.00", font_size=9)
+            WordGenerator.set_cell_style(cells[5], "0.00", font_size=9)
+            WordGenerator.set_cell_style(cells[6], fmt(total_sub), font_size=9)
+            WordGenerator.set_cell_style(cells[7], fmt(total_fee), font_size=9)
+            WordGenerator.set_cell_style(cells[8], fmt_d(total_days), font_size=9)
+            WordGenerator.set_cell_style(cells[9], fmt(grand_total), font_size=9)
 
-            # 3. 填充数据 - 明细表 (Table 1)
+            # 3. 填充明细表
             table1 = doc.tables[1]
             cols_map_df = [
                 '人员', '人事范围', '所属项目', '合同主体', 
@@ -372,18 +408,17 @@ class WordGenerator:
                     else:
                         text_val = str(val)
                     
-                    WordGenerator.set_cell_style(new_row.cells[i], text_val, font_size=9)
+                    WordGenerator.set_cell_style(new_row.cells[i], text_val, font_size=8)
             
             # 增加明细表合计行
             sum_row = table1.add_row()
-            WordGenerator.set_cell_style(sum_row.cells[0], "合计", bold=True, font_size=9)
-            WordGenerator.set_cell_style(sum_row.cells[6], fmt_d(total_days), bold=True, font_size=9)
-            WordGenerator.set_cell_style(sum_row.cells[7], fmt(total_labor), bold=True, font_size=9)
-            WordGenerator.set_cell_style(sum_row.cells[8], fmt(total_sub), bold=True, font_size=9)
-            WordGenerator.set_cell_style(sum_row.cells[9], fmt(total_fee), bold=True, font_size=9)
-            WordGenerator.set_cell_style(sum_row.cells[10], fmt(grand_total), bold=True, font_size=9)
+            WordGenerator.set_cell_style(sum_row.cells[0], "合计", bold=True, font_size=8)
+            WordGenerator.set_cell_style(sum_row.cells[6], fmt_d(total_days), bold=True, font_size=8)
+            WordGenerator.set_cell_style(sum_row.cells[7], fmt(total_labor), bold=True, font_size=8)
+            WordGenerator.set_cell_style(sum_row.cells[8], fmt(total_sub), bold=True, font_size=8)
+            WordGenerator.set_cell_style(sum_row.cells[9], fmt(total_fee), bold=True, font_size=8)
+            WordGenerator.set_cell_style(sum_row.cells[10], fmt(grand_total), bold=True, font_size=8)
 
-            # 保存
             out = io.BytesIO()
             doc.save(out)
             safe_dept = str(dept_name).replace('/', '_').replace('\\', '_')
@@ -403,11 +438,9 @@ class UIComponents:
             p = st.number_input("人力单价 (元/天)", value=1500, step=100)
             h = st.number_input("工时阈值 (小时)", value=100)
             s = st.text_input("补助关键词", "差旅补助")
-            # 【改动】不再需要上传模板，直接输入周期文案即可
             period = st.text_input("结算周期文案", "2025年第三季度")
-            
             st.markdown("---")
-            if st.button("🐱 字段映射 & 逻辑", help="查看映射逻辑"):
+            if st.button("🐱 字段映射 & 逻辑"):
                 st.session_state.page = 'mapping'
                 st.rerun()
             return p, h, s, period
@@ -444,48 +477,22 @@ class UIComponents:
     def render_download_zone(result_files, all_in_one_zip, word_files_dict):
         with st.container(border=True):
             st.success("✅ 所有报表生成完毕")
-            
-            # 1. 批量下载
             st.subheader("📦 批量下载")
-            st.download_button(
-                label="🚀 一键下载所有文件 (Excel + Word 打包)",
-                data=all_in_one_zip,
-                file_name="项目结算资料全集.zip",
-                mime="application/zip",
-                type="primary",
-                use_container_width=True
-            )
-
+            st.download_button("🚀 一键下载所有文件 (Excel + Word 打包)", all_in_one_zip, "项目结算资料全集.zip", "application/zip", type="primary", use_container_width=True)
             st.divider()
-
-            # 2. 基础数据表
             st.subheader("📊 基础数据表 (Excel)")
             c1, c2, c3 = st.columns(3)
-            if result_files and 't1' in result_files:
-                c1.download_button("📥 表1: 工时统计", result_files['t1'], "表1_工时统计.xlsx", use_container_width=True)
-            if result_files and 't2' in result_files:
-                c2.download_button("📥 表2: 结算汇总", result_files['t2'], "表2_结算汇总.xlsx", use_container_width=True)
-            if result_files and 't3' in result_files:
-                c3.download_button("📥 表3: 详细明细", result_files['t3'], "表3_详细明细.xlsx", use_container_width=True)
-
-            # 3. Word 列表
+            if result_files and 't1' in result_files: c1.download_button("📥 表1: 工时统计", result_files['t1'], "表1_工时统计.xlsx", use_container_width=True)
+            if result_files and 't2' in result_files: c2.download_button("📥 表2: 结算汇总", result_files['t2'], "表2_结算汇总.xlsx", use_container_width=True)
+            if result_files and 't3' in result_files: c3.download_button("📥 表3: 详细明细", result_files['t3'], "表3_详细明细.xlsx", use_container_width=True)
             st.subheader(f"📝 结算单 (Word - 共{len(word_files_dict)}个)")
-            if not word_files_dict:
-                st.info("ℹ️ 没有生成结算单 (可能是数据为空)")
+            if not word_files_dict: st.info("ℹ️ 没有生成结算单 (可能是数据为空)")
             else:
                 with st.expander(f"点击展开查看 {len(word_files_dict)} 份结算单", expanded=False):
                     for fname, fbytes in word_files_dict.items():
-                        col_text, col_btn = st.columns([4, 1])
-                        with col_text:
-                            st.text(f"📄 {fname}")
-                        with col_btn:
-                            st.download_button(
-                                "下载", 
-                                fbytes, 
-                                fname, 
-                                key=f"btn_{fname}",
-                                use_container_width=True
-                            )
+                        c_t, c_b = st.columns([4, 1])
+                        c_t.text(f"📄 {fname}")
+                        c_b.download_button("下载", fbytes, fname, key=f"btn_{fname}", use_container_width=True)
 
     @staticmethod
     def render_native_editor(desc, subset, is_edit, cols_a, cols_b):
@@ -503,10 +510,9 @@ class UIComponents:
         else:
             column_config["源表"] = st.column_config.TextColumn("源表", disabled=True)
             column_config["匹配字段"] = st.column_config.TextColumn("匹配字段", disabled=True)
-
+        
         calc_height = (len(df_display) + 1) * 35 + 10
         final_height = max(400, min(1000, calc_height))
-
         edited = st.data_editor(df_display, column_config=column_config, use_container_width=True, hide_index=True, disabled=not is_edit, height=final_height, key=f"editor_{subset.iloc[0]['所属表']}")
 
         if is_edit:
@@ -541,7 +547,6 @@ if 'result_files' not in st.session_state: st.session_state.result_files = {}
 inject_css()
 
 if st.session_state.page == 'main':
-    # 接收周期文案
     price, hours_limit, sub_tag, period_text = UIComponents.render_sidebar()
     st.title("😈 淡藤财务报表 Pro")
 
@@ -580,12 +585,7 @@ if st.session_state.page == 'main':
 
     if has_files:
         if st.session_state.is_calculated:
-            # UI渲染
-            UIComponents.render_download_zone(
-                st.session_state.result_files, 
-                st.session_state.all_zip,
-                st.session_state.word_files
-            )
+            UIComponents.render_download_zone(st.session_state.result_files, st.session_state.all_zip, st.session_state.word_files)
         
         elif st.session_state.error_report is not None:
             def fix_action():
@@ -601,14 +601,11 @@ if st.session_state.page == 'main':
                     da, db = get_df('Source A'), get_df('Source B')
                     t1, t2 = st.tabs([f"A ({len(da)})", f"B ({len(db)})"])
                     na, nb = None, None
-                    
                     with t1:
-                        if not da.empty:
-                            na = st.data_editor(da, height=300, hide_index=True, column_config={"_sys_id": None}, key="fix_a")
+                        if not da.empty: na = st.data_editor(da, height=300, hide_index=True, column_config={"_sys_id": None}, key="fix_a")
                         else: st.info("无数据错误")
                     with t2:
-                        if not db.empty:
-                            nb = st.data_editor(db, height=300, hide_index=True, column_config={"_sys_id": None}, key="fix_b")
+                        if not db.empty: nb = st.data_editor(db, height=300, hide_index=True, column_config={"_sys_id": None}, key="fix_b")
                         else: st.info("无数据错误")
                     
                     if st.button("💾 保存并重算", type="primary"):
@@ -624,7 +621,6 @@ if st.session_state.page == 'main':
                         st.session_state.block_auto_run = False
                         st.rerun()
                 show_fix()
-            
             should_rerun = UIComponents.render_error_report(st.session_state.error_report, fix_action)
             if should_rerun:
                 st.session_state.error_report = None
@@ -652,7 +648,6 @@ if st.session_state.page == 'main':
             else:
                 res = DataEngine.calculate(df_a, df_b, st.session_state.mapping_config, price, sub_tag)
                 
-                # 生成 Excel
                 excel_files_dict = {
                     "t1": DataEngine.to_bytes(res['t1']),
                     "t2": DataEngine.to_bytes(res['t2']),
@@ -660,15 +655,12 @@ if st.session_state.page == 'main':
                 }
                 st.session_state.result_files = excel_files_dict
                 
-                # 生成 Word (直接用代码画，无需模板)
                 word_files_dict, err_msg = WordGenerator.generate(res['t3'], period_text)
                 if err_msg:
                     st.warning(f"Word生成受限: {err_msg}")
                     word_files_dict = {}
-
                 st.session_state.word_files = word_files_dict
 
-                # 打包
                 all_files_to_zip = {}
                 all_files_to_zip["表1_工时统计.xlsx"] = excel_files_dict['t1']
                 all_files_to_zip["表2_结算汇总.xlsx"] = excel_files_dict['t2']
@@ -687,17 +679,13 @@ if st.session_state.page == 'main':
 elif st.session_state.page == 'mapping':
     c1, c2 = st.columns([9, 1])
     c1.markdown("<div class='nav-header'>🐱 字段映射 & 逻辑配置</div>", unsafe_allow_html=True)
-    if c2.button("⬅️", use_container_width=True, help="返回主页"): 
+    if c2.button("⬅️", use_container_width=True): 
         st.session_state.page = 'main'
         st.rerun()
-    
     st.markdown("<hr style='margin-top:0; border-color:#30363d;'>", unsafe_allow_html=True)
-
-    c_title, c_spacer, c_action = st.columns([7, 1, 2])
-    c_title.markdown("#### 🧬 数据血缘与逻辑配置")
+    c_action = st.columns([7, 1, 2])[2]
     
     has_files = st.session_state.data_store['A']['df'] is not None and st.session_state.data_store['B']['df'] is not None
-    
     with c_action:
         if not st.session_state.is_editing_mapping:
             if st.button("✏️ 编辑配置", type="primary", use_container_width=True):
@@ -715,22 +703,8 @@ elif st.session_state.page == 'mapping':
 
     df_c = st.session_state.mapping_config
     t1, t2, t3 = st.tabs(["结果表3 (底表)", "结果表2 (结算)", "结果表1 (工时)"])
-    
     cols_a = list(st.session_state.data_store['A']['df'].columns) if has_files else []
     cols_b = list(st.session_state.data_store['B']['df'].columns) if has_files else []
-
-    with t1:
-        UIComponents.render_native_editor(
-            "全量明细底表：基于 Source A/B 进行清洗、聚合、关联计算后的宽表。",
-            df_c[df_c['所属表']=='结果表3'], st.session_state.is_editing_mapping, cols_a, cols_b
-        )
-    with t2:
-        UIComponents.render_native_editor(
-            "结算汇总表：基于【结果表3】按公司/部门维度二次聚合的金额数据。",
-            df_c[df_c['所属表']=='结果表2'], st.session_state.is_editing_mapping, cols_a, cols_b
-        )
-    with t3:
-        UIComponents.render_native_editor(
-            "工时统计表：基于【结果表3】按人员维度二次聚合的工时数据。",
-            df_c[df_c['所属表']=='结果表1'], st.session_state.is_editing_mapping, cols_a, cols_b
-        )
+    with t1: UIComponents.render_native_editor("全量明细底表", df_c[df_c['所属表']=='结果表3'], st.session_state.is_editing_mapping, cols_a, cols_b)
+    with t2: UIComponents.render_native_editor("结算汇总表", df_c[df_c['所属表']=='结果表2'], st.session_state.is_editing_mapping, cols_a, cols_b)
+    with t3: UIComponents.render_native_editor("工时统计表", df_c[df_c['所属表']=='结果表1'], st.session_state.is_editing_mapping, cols_a, cols_b)
