@@ -31,14 +31,13 @@ def inject_css():
         .nav-header { font-size: 1.2rem; font-weight: bold; display:flex; align-items:center; height: 100%; }
         .info-bar { background-color: rgba(56, 139, 253, 0.1); border-left: 4px solid #58a6ff; color: #c9d1d9; padding: 8px 15px; margin-bottom: 20px; font-size: 0.9rem; border-radius: 4px; }
         .error-box { border: 1px solid #ff7b72; background-color: rgba(255, 123, 114, 0.1); padding: 15px; border-radius: 6px; margin-bottom: 15px; }
-        /* 侧边栏强调样式 */
-        .stSidebar .stButton button { width: 100%; border: 1px solid #238636; color: #238636; }
-        .stSidebar .stButton button:hover { background-color: #238636; color: white; }
+        /* 侧边栏按钮样式优化 */
+        .stSidebar .stButton button { width: 100%; }
     </style>
     """, unsafe_allow_html=True)
 
 # ==============================================================================
-# Zone A: 纯逻辑层 (保持不变，为了运行完整性保留在此)
+# Zone A: 纯逻辑层 (DataEngine & WordGenerator)
 # ==============================================================================
 class DataEngine:
     @staticmethod
@@ -445,9 +444,9 @@ class UIComponents:
                 key="input_price"
             )
             
-            # 2. 工时阈值 (如有错误，显示显眼提示)
+            # 2. 工时阈值 (如有错误，显示精简提示)
             if has_error:
-                st.error("⚠️ 发现异常！建议调整阈值", icon="🚨")
+                st.error("请调整工时", icon="🚨")
             
             st.session_state.params['hours_limit'] = st.number_input(
                 "工时阈值 (小时)", 
@@ -480,8 +479,8 @@ class UIComponents:
             trigger_recalc = False
             
             if has_files and param_changed:
-                st.warning("⚠️ 参数已修改，请重新校验", icon="🔄")
-                if st.button("🔄 立即重新校验与计算", type="primary"):
+                # 仅显示按钮，去除文本提示框
+                if st.button("🔄 参数已改，点击重算", type="primary", use_container_width=True):
                     trigger_recalc = True
             
             if st.button("🐱 字段映射 & 逻辑"):
@@ -539,7 +538,6 @@ class UIComponents:
     @staticmethod
     def render_native_editor(desc, subset, is_edit, cols_a, cols_b):
         st.markdown(f'<div class="info-bar">ℹ️ {desc}</div>', unsafe_allow_html=True)
-        # (Editor code remains same as before...)
         df_display = subset[['序号', '目标字段', '源表', '匹配字段', '逻辑说明']].copy().reset_index(drop=True)
         df_display['序号'] = df_display['序号'].astype(str)
         column_config = {
