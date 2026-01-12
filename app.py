@@ -6,7 +6,7 @@ import zipfile
 import re 
 
 # ==============================================================================
-# 依赖库检查与导入 (python-docx)
+# 依赖库检查与导入
 # ==============================================================================
 try:
     import docx
@@ -18,6 +18,10 @@ try:
     HAS_DOCX = True
 except ImportError:
     HAS_DOCX = False
+
+# 【新增】Excel样式依赖
+from openpyxl.styles import Border, Side, Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 
 # ==============================================================================
 # Zone 0: 全局配置 & 样式注入
@@ -46,35 +50,21 @@ def inject_css():
 class DataEngine:
     @staticmethod
     def get_quarter_str(text):
-        """
-        【核心修正】精准解析季度
-        支持：2025年第三季度, 2025年第3季度, 2025 Q3, 2025-Q3
-        """
         if not text: return "2025Qx"
         s = str(text)
-        
-        # 1. 提取年份 (4位数字)
         year_match = re.search(r'(\d{4})', s)
         year = year_match.group(1) if year_match else "2025"
-        
-        # 2. 提取季度 (核心逻辑)
-        quarter = "Q1" # 默认 fallback
-        
-        # 优先匹配中文数字 "一、二、三、四"
+        quarter = "Q1" 
         if '一' in s: quarter = "Q1"
         elif '二' in s: quarter = "Q2"
         elif '三' in s: quarter = "Q3"
         elif '四' in s: quarter = "Q4"
-        # 其次匹配阿拉伯数字 "1, 2, 3, 4" (且不在年份里)
-        # 简单粗暴法：如果没匹配到中文，看是否包含特定数字组合
         else:
-            # 排除掉年份里的数字，查找剩余部分
             rem = s.replace(year, '')
             if '1' in rem: quarter = "Q1"
             elif '2' in rem: quarter = "Q2"
             elif '3' in rem: quarter = "Q3"
             elif '4' in rem: quarter = "Q4"
-            
         return f"{year}{quarter}"
 
     @staticmethod
@@ -221,10 +211,63 @@ class DataEngine:
 
     @staticmethod
     def to_bytes(df):
+        """
+        【核心修改】生成带边框、居中对齐、自适应列宽的 Excel
+        """
         b = io.BytesIO()
+        # 移除系统列
         out = df.drop(columns=['_sys_id'], errors='ignore')
+        
         with pd.ExcelWriter(b, engine='openpyxl') as writer:
-            out.to_excel(writer, index=False)
+            out.to_excel(writer, index=False, sheet_name='Sheet1')
+            
+            # 获取 worksheet 对象进行样式修改
+            workbook = writer.book
+            worksheet = writer.sheets['Sheet1']
+            
+            # 1. 定义样式
+            thin = Side(border_style="thin", color="000000")
+            border = Border(top=thin, left=thin, right=thin, bottom=thin)
+            align_center = Alignment(horizontal='center', vertical='center', wrap_text=False)
+            header_font = Font(bold=True) # 表头加粗
+            
+            # 2. 遍历数据区域（包括表头）应用样式
+            # min_row=1 表示从表头开始
+            for row in worksheet.iter_rows(min_row=1, max_row=len(out)+1, min_col=1, max_col=len(out.columns)):
+                for cell in row:
+                    cell.border = border
+                    cell.alignment = align_center
+                    if cell.row == 1:
+                        cell.font = header_font
+
+            # 3. 自动调整列宽
+            for i, col in enumerate(out.columns):
+                # 计算该列所有内容的最大长度 (粗略估计：中文算2，英文算1)
+                max_len = 0
+                
+                # 先看表头
+                try:
+                    header_len = len(str(col).encode('gbk'))
+                except:
+                    header_len = len(str(col))
+                max_len = header_len
+
+                # 再看内容 (取前50行采样以提高性能，或者全量)
+                for val in out[col]:
+                    if val is not None:
+                        try:
+                            # gbk编码下中文占2字节
+                            v_len = len(str(val).encode('gbk'))
+                        except:
+                            v_len = len(str(val))
+                        if v_len > max_len:
+                            max_len = v_len
+                
+                # 设置宽度 (稍微加点余量，最大不超过60)
+                adjusted_width = min((max_len + 2) * 1.1, 60) 
+                col_letter = get_column_letter(i + 1)
+                worksheet.column_dimensions[col_letter].width = adjusted_width
+
         return b.getvalue()
 
 class WordGenerator:
@@ -454,7 +497,7 @@ class WordGenerator:
         return output_files, None
 
 # ==============================================================================
-# Zone B: UI 组件层 (重构)
+# Zone B: UI 组件层
 # ==============================================================================
 class UIComponents:
     @staticmethod
@@ -550,7 +593,6 @@ class UIComponents:
             st.download_button("🚀 一键下载 (Excel + Word)", all_in_one_zip, "项目结算资料全集.zip", "application/zip", type="primary", use_container_width=True)
             st.divider()
             
-            # 【核心修改】文件名动态映射修复
             q_str = DataEngine.get_quarter_str(period_str)
             name_t1 = f"实施交付部项目情况汇总_部门工时统计-{q_str}.xlsx"
             name_t3 = f"实施交付部项目情况汇总_结算工时总表-{q_str}.xlsx"
@@ -704,7 +746,6 @@ if st.session_state.page == 'main':
                     if err_msg: st.warning(f"Word生成受限: {err_msg}")
                     st.session_state.word_files = word_files_dict
                     
-                    # 【核心修改】文件名动态生成
                     all_files_to_zip = {}
                     q_str = DataEngine.get_quarter_str(current_params['period'])
                     all_files_to_zip[f"实施交付部项目情况汇总_部门工时统计-{q_str}.xlsx"] = excel_files_dict['t1']
