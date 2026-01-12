@@ -32,23 +32,36 @@ def inject_css():
         .info-bar { background-color: rgba(56, 139, 253, 0.1); border-left: 4px solid #58a6ff; color: #c9d1d9; padding: 8px 15px; margin-bottom: 20px; font-size: 0.9rem; border-radius: 4px; }
         .error-box { border: 1px solid #ff7b72; background-color: rgba(255, 123, 114, 0.1); padding: 15px; border-radius: 6px; margin-bottom: 15px; }
         
-        /* 侧边栏样式微调 */
+        /* 侧边栏按钮样式优化 */
         section[data-testid="stSidebar"] .stButton button { 
             width: 100%; 
             border-radius: 4px;
+            font-weight: bold;
         }
         
-        /* 【核心修改】强制压缩侧边栏 Alert 的高度，使其与输入框一致 */
+        /* 【核心修改】强制压缩侧边栏 Alert 的高度，使其与输入框一致并居中 */
         section[data-testid="stSidebar"] div[data-testid="stAlert"] {
-            padding: 0.2rem 0.8rem; /* 极小的内边距 */
-            min-height: 0px;
-            margin-bottom: 10px;
+            padding: 0px 10px;
+            height: 46px; /* 强制匹配 Streamlit 输入框标准高度 */
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
-        /* 调整Alert内部图标和文字的对齐 */
+        
+        /* 修正图标和文字的布局 */
         section[data-testid="stSidebar"] div[data-testid="stAlert"] > div {
             display: flex;
             align-items: center;
-            padding-top: 2px;
+            justify-content: center;
+            width: 100%;
+        }
+        
+        /* 文字居中样式 */
+        section[data-testid="stSidebar"] div[data-testid="stAlert"] p {
+            font-size: 14px;
+            margin: 0;
+            line-height: 1;
+            padding-left: 5px; /* 图标和文字间距 */
         }
     </style>
     """, unsafe_allow_html=True)
@@ -461,7 +474,6 @@ class UIComponents:
             )
             
             # 2. 工时阈值 (如有错误，显示精简提示，位置：单价和工时之间)
-            # 这里的顺序严格遵循您的截图
             if has_error:
                 st.error("请调整工时", icon="🚨")
             
@@ -491,7 +503,7 @@ class UIComponents:
             
             trigger_recalc = False
             
-            # 【核心修改】直接显示按钮，去除文本提示，按钮样式为 primary
+            # 【核心修改】直接显示按钮，位置在周期文案下方
             if has_files and param_changed:
                 st.write("") # 加一点间距
                 if st.button("重新运算", type="primary", use_container_width=True):
@@ -541,7 +553,8 @@ class UIComponents:
             if result_files and 't2' in result_files: c2.download_button("📥 结算汇总表.xlsx", result_files['t2'], "表2_结算汇总.xlsx", use_container_width=True)
             if result_files and 't3' in result_files: c3.download_button("📥 详细明细表.xlsx", result_files['t3'], "表3_详细明细.xlsx", use_container_width=True)
             if word_files_dict:
-                with st.expander(f"查看 {len(word_files_dict)} 份 Word 结算单", expanded=False):
+                # 【核心修改】文案改为 "📄 结算单"
+                with st.expander(f"📄 结算单 ({len(word_files_dict)})", expanded=False):
                     for fname, fbytes in word_files_dict.items():
                         c_t, c_b = st.columns([4, 1])
                         c_t.text(f"📄 {fname}")
