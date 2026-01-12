@@ -404,22 +404,34 @@ class WordGenerator:
         table1.autofit = False
         table1.allow_autofit = False
         
-        # 定制化列宽 (总宽约 17.4cm)
+        # 【关键修改】列宽重置：压缩文字列，扩充金额列以防换行
+        # 总宽 ~17.5cm
         # 人员, 范围, 项目, 合同, 销售, 大区, 人天, 人力, 补助, 平台, 总额
-        t1_widths = [1.0, 1.8, 2.2, 2.2, 1.2, 1.2, 1.2, 1.6, 1.6, 1.6, 1.8]
+        t1_widths = [0.9, 1.2, 1.5, 1.5, 1.0, 1.0, 1.0, 2.2, 2.3, 2.3, 2.6]
         for row in table1.rows:
             for idx, width in enumerate(t1_widths):
                 row.cells[idx].width = Cm(width)
 
-        # --- Row 0: 明细表头 ---
+        # --- Row 0: 明细表头 (强制换行) ---
         WordGenerator.set_row_height(table1.rows[0], 1.46)
-        cols_text = [
-            '人员', '人事范围', '项目名称', '项目合同主体', 
-            '销售人员', '销售所在大区', '支持人天', '人力费用', 
-            '差旅补助', '差旅平台费用', '总费用（元）'
+        
+        # 使用 display_text 列表来控制显示 (与 cols_map_df 的数据对应)
+        header_texts = [
+            '人员', 
+            '人事\n范围', 
+            '项目\n名称', 
+            '合同\n名称',  # 显示为合同名称，数据取自合同主体
+            '销售\n人员', 
+            '销售所\n在大区', 
+            '支持\n人天', 
+            '人力\n费用', 
+            '差旅\n补助', 
+            '差旅平\n台费用', 
+            '总费用\n（元）'
         ]
-        for i, c in enumerate(cols_text):
-            WordGenerator.set_cell_style(table1.rows[0].cells[i], c, bold=False, font_size=10)
+        
+        for i, text in enumerate(header_texts):
+            WordGenerator.set_cell_style(table1.rows[0].cells[i], text, bold=False, font_size=10)
 
         return doc
 
@@ -483,7 +495,7 @@ class WordGenerator:
             ]
             
             # 定制列宽需重复应用
-            t1_widths = [1.0, 1.8, 2.2, 2.2, 1.2, 1.2, 1.2, 1.6, 1.6, 1.6, 1.8]
+            t1_widths = [0.9, 1.2, 1.5, 1.5, 1.0, 1.0, 1.0, 2.2, 2.3, 2.3, 2.6]
 
             for _, row in df_curr.iterrows():
                 new_row = table1.add_row()
@@ -504,18 +516,7 @@ class WordGenerator:
                     
                     WordGenerator.set_cell_style(new_row.cells[i], text_val, bold=False, font_size=10)
             
-            # 合计行
-            sum_row = table1.add_row()
-            WordGenerator.set_row_height(sum_row, 2.27)
-            for idx, width in enumerate(t1_widths):
-                sum_row.cells[idx].width = Cm(width)
-            
-            WordGenerator.set_cell_style(sum_row.cells[0], "合计", bold=False, font_size=10)
-            WordGenerator.set_cell_style(sum_row.cells[6], fmt_d(total_days), bold=False, font_size=10)
-            WordGenerator.set_cell_style(sum_row.cells[7], fmt(total_labor), bold=False, font_size=10)
-            WordGenerator.set_cell_style(sum_row.cells[8], fmt(total_sub), bold=False, font_size=10)
-            WordGenerator.set_cell_style(sum_row.cells[9], fmt(total_fee), bold=False, font_size=10)
-            WordGenerator.set_cell_style(sum_row.cells[10], fmt(grand_total), bold=False, font_size=10)
+            # 【修正】删除了合计行逻辑，完全符合要求
 
             out = io.BytesIO()
             doc.save(out)
