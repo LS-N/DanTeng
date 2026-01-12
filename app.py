@@ -31,8 +31,25 @@ def inject_css():
         .nav-header { font-size: 1.2rem; font-weight: bold; display:flex; align-items:center; height: 100%; }
         .info-bar { background-color: rgba(56, 139, 253, 0.1); border-left: 4px solid #58a6ff; color: #c9d1d9; padding: 8px 15px; margin-bottom: 20px; font-size: 0.9rem; border-radius: 4px; }
         .error-box { border: 1px solid #ff7b72; background-color: rgba(255, 123, 114, 0.1); padding: 15px; border-radius: 6px; margin-bottom: 15px; }
-        /* 侧边栏按钮样式优化 */
-        .stSidebar .stButton button { width: 100%; }
+        
+        /* 侧边栏样式微调 */
+        section[data-testid="stSidebar"] .stButton button { 
+            width: 100%; 
+            border-radius: 4px;
+        }
+        
+        /* 【核心修改】强制压缩侧边栏 Alert 的高度，使其与输入框一致 */
+        section[data-testid="stSidebar"] div[data-testid="stAlert"] {
+            padding: 0.2rem 0.8rem; /* 极小的内边距 */
+            min-height: 0px;
+            margin-bottom: 10px;
+        }
+        /* 调整Alert内部图标和文字的对齐 */
+        section[data-testid="stSidebar"] div[data-testid="stAlert"] > div {
+            display: flex;
+            align-items: center;
+            padding-top: 2px;
+        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -427,7 +444,6 @@ class UIComponents:
         with st.sidebar:
             st.header("⚙️ 参数配置")
             
-            # 使用 session_state 初始化默认值，如果不存在
             if 'params' not in st.session_state:
                 st.session_state.params = {
                     'price': 1500,
@@ -444,7 +460,8 @@ class UIComponents:
                 key="input_price"
             )
             
-            # 2. 工时阈值 (如有错误，显示精简提示)
+            # 2. 工时阈值 (如有错误，显示精简提示，位置：单价和工时之间)
+            # 这里的顺序严格遵循您的截图
             if has_error:
                 st.error("请调整工时", icon="🚨")
             
@@ -466,22 +483,21 @@ class UIComponents:
                 key="input_period"
             )
             
-            st.markdown("---")
-            
-            # 判断参数是否变化 (与上次计算时使用的参数对比)
+            # 判断参数是否变化
             current_params = st.session_state.params.copy()
             last_run_params = st.session_state.get('last_run_params', None)
-            
-            # 逻辑核心：如果有文件，且参数变了，显示重新校验按钮
             has_files = st.session_state.data_store['A']['df'] is not None and st.session_state.data_store['B']['df'] is not None
             param_changed = last_run_params is not None and current_params != last_run_params
             
             trigger_recalc = False
             
+            # 【核心修改】直接显示按钮，去除文本提示，按钮样式为 primary
             if has_files and param_changed:
-                # 仅显示按钮，去除文本提示框
-                if st.button("🔄 参数已改，点击重算", type="primary", use_container_width=True):
+                st.write("") # 加一点间距
+                if st.button("重新运算", type="primary", use_container_width=True):
                     trigger_recalc = True
+            
+            st.markdown("---")
             
             if st.button("🐱 字段映射 & 逻辑"):
                 st.session_state.page = 'mapping'
@@ -506,13 +522,10 @@ class UIComponents:
     @staticmethod
     def render_error_report(err_df):
         fixable = err_df[err_df['类型']=='数据错误']
-        rule = err_df[err_df['类型']=='业务规则校验'] # 工时不足属于这类
-        
+        rule = err_df[err_df['类型']=='业务规则校验']
         st.markdown(f"<div class='error-box'><h3 style='margin:0'>🚨 校验未通过</h3><p>发现 <b>{len(fixable)}</b> 个数据错误，<b>{len(rule)}</b> 个业务规则警告。</p></div>", unsafe_allow_html=True)
         st.dataframe(err_df[['类型','来源','行号','信息']], use_container_width=True, hide_index=True)
         st.download_button("📥 下载错误清单", err_df.to_csv(index=False).encode('utf-8-sig'), "err.csv", "text/csv", use_container_width=True)
-        
-        # 返回是否含有工时阈值相关的错误，用于侧边栏标红
         has_threshold_error = any("阈值" in str(x) for x in err_df['信息'])
         return has_threshold_error
 
@@ -527,7 +540,6 @@ class UIComponents:
             if result_files and 't1' in result_files: c1.download_button("📥 工时统计表.xlsx", result_files['t1'], "表1_工时统计.xlsx", use_container_width=True)
             if result_files and 't2' in result_files: c2.download_button("📥 结算汇总表.xlsx", result_files['t2'], "表2_结算汇总.xlsx", use_container_width=True)
             if result_files and 't3' in result_files: c3.download_button("📥 详细明细表.xlsx", result_files['t3'], "表3_详细明细.xlsx", use_container_width=True)
-            
             if word_files_dict:
                 with st.expander(f"查看 {len(word_files_dict)} 份 Word 结算单", expanded=False):
                     for fname, fbytes in word_files_dict.items():
@@ -572,7 +584,7 @@ class UIComponents:
                         st.session_state.mapping_config.at[orig_idx, '匹配字段'] = row['匹配字段']
 
 # ==============================================================================
-# Zone C: 控制层 (重构核心)
+# Zone C: 控制层
 # ==============================================================================
 if 'page' not in st.session_state: st.session_state.page = 'main'
 if 'data_store' not in st.session_state: st.session_state.data_store = {'A': {'df': None, 'name': None}, 'B': {'df': None, 'name': None}}
@@ -583,24 +595,19 @@ if 'is_editing_mapping' not in st.session_state: st.session_state.is_editing_map
 if 'all_zip' not in st.session_state: st.session_state.all_zip = None
 if 'word_files' not in st.session_state: st.session_state.word_files = {}
 if 'result_files' not in st.session_state: st.session_state.result_files = {}
-# 新增状态：记录上一次计算时的参数，用于比对变化
 if 'last_run_params' not in st.session_state: st.session_state.last_run_params = None
 if 'threshold_error_flag' not in st.session_state: st.session_state.threshold_error_flag = False
 
 inject_css()
 
 if st.session_state.page == 'main':
-    # 1. 渲染侧边栏 (传入错误标记，返回当前参数和重算信号)
     current_params, manual_recalc = UIComponents.render_sidebar(st.session_state.threshold_error_flag)
-    
     st.title("😈 淡藤财务报表 Pro")
 
-    # 2. 渲染文件控制台
     with st.container(border=True):
         c_h1, c_h2 = st.columns([8, 1])
         c_h1.markdown("### 📂 数据源控制台")
         
-        # 智能重置：只清空数据，保留参数
         if c_h2.button("🗑️ 重置"): 
             st.session_state.data_store = {'A': {'df': None, 'name': None}, 'B': {'df': None, 'name': None}}
             st.session_state.is_calculated = False
@@ -612,12 +619,10 @@ if st.session_state.page == 'main':
         
         c1, c2 = st.columns(2)
         
-        # 处理文件上传
         def handle(key, title):
             res = UIComponents.render_file_slot(key, title, st.session_state.data_store)
             if res == "DELETE":
                 st.session_state.data_store[key] = {'df': None, 'name': None}
-                # 删除文件也视为状态变更，重置计算状态
                 st.session_state.is_calculated = False
                 st.session_state.error_report = None
                 st.session_state.last_run_params = None 
@@ -628,7 +633,6 @@ if st.session_state.page == 'main':
                     df.columns = [str(c).strip() for c in df.columns]
                     df['_sys_id'] = range(1, len(df)+1)
                     st.session_state.data_store[key] = {'df': df, 'name': res.name}
-                    # 新文件上传 -> 强制重置计算状态 -> 触发下文的自动计算
                     st.session_state.is_calculated = False
                     st.session_state.error_report = None
                     st.session_state.last_run_params = None 
@@ -640,25 +644,18 @@ if st.session_state.page == 'main':
 
     st.divider()
     
-    # 3. 核心流转逻辑
     has_files = st.session_state.data_store['A']['df'] is not None and st.session_state.data_store['B']['df'] is not None
     should_calculate = False
 
     if has_files:
-        # 情况A: 刚上传完文件，尚未计算 (last_run_params 为空) -> 自动触发
         if st.session_state.last_run_params is None:
             should_calculate = True
-        # 情况B: 用户点击了“重新校验”按钮 -> 触发
         elif manual_recalc:
             should_calculate = True
         
-        # 如果需要计算
         if should_calculate:
             with st.spinner("🚀 正在校验并计算数据..."):
-                # 重置错误标记
                 st.session_state.threshold_error_flag = False
-                
-                # 校验
                 errs, df_a, df_b = DataEngine.validate(
                     st.session_state.data_store['A']['df'].copy(),
                     st.session_state.data_store['B']['df'].copy(),
@@ -669,54 +666,44 @@ if st.session_state.page == 'main':
                 if errs:
                     st.session_state.error_report = pd.DataFrame(errs)
                     st.session_state.is_calculated = False
-                    # 记录本次使用的参数，以便下次对比
                     st.session_state.last_run_params = current_params.copy()
-                    st.rerun() # 刷新以显示错误
+                    st.rerun()
                 else:
-                    # 计算
                     res = DataEngine.calculate(df_a, df_b, st.session_state.mapping_config, current_params['price'], current_params['sub_tag'])
-                    
                     excel_files_dict = {
                         "t1": DataEngine.to_bytes(res['t1']),
                         "t2": DataEngine.to_bytes(res['t2']),
                         "t3": DataEngine.to_bytes(res['t3'])
                     }
                     st.session_state.result_files = excel_files_dict
-                    
                     word_files_dict, err_msg = WordGenerator.generate(res['t3'], current_params['period'])
                     if err_msg: st.warning(f"Word生成受限: {err_msg}")
                     st.session_state.word_files = word_files_dict
-
                     all_files_to_zip = {}
                     all_files_to_zip["表1_工时统计.xlsx"] = excel_files_dict['t1']
                     all_files_to_zip["表2_结算汇总.xlsx"] = excel_files_dict['t2']
                     all_files_to_zip["表3_详细明细.xlsx"] = excel_files_dict['t3']
                     all_files_to_zip.update(word_files_dict)
-
                     buf_zip = io.BytesIO()
                     with zipfile.ZipFile(buf_zip, 'w', zipfile.ZIP_DEFLATED) as z:
                         for fname, fcontent in all_files_to_zip.items():
                             z.writestr(fname, fcontent)
-                    
                     st.session_state.all_zip = buf_zip.getvalue()
                     st.session_state.is_calculated = True
                     st.session_state.error_report = None
                     st.session_state.last_run_params = current_params.copy()
                     st.rerun()
 
-    # 4. 结果展示区
     if st.session_state.error_report is not None:
-        # 检测是否包含阈值错误，并更新状态用于侧边栏红框
         is_threshold_err = UIComponents.render_error_report(st.session_state.error_report)
         if is_threshold_err != st.session_state.threshold_error_flag:
             st.session_state.threshold_error_flag = is_threshold_err
-            st.rerun() # 刷新侧边栏状态
+            st.rerun()
             
     elif st.session_state.is_calculated:
         UIComponents.render_download_zone(st.session_state.result_files, st.session_state.all_zip, st.session_state.word_files)
 
 elif st.session_state.page == 'mapping':
-    # (Mapping page logic remains similar but simplified for brevity)
     c1, c2 = st.columns([9, 1])
     c1.markdown("<div class='nav-header'>🐱 字段映射 & 逻辑配置</div>", unsafe_allow_html=True)
     if c2.button("⬅️", use_container_width=True): 
@@ -738,7 +725,7 @@ elif st.session_state.page == 'mapping':
                 st.session_state.is_editing_mapping = False
                 st.session_state.is_calculated = False
                 st.session_state.error_report = None
-                st.session_state.last_run_params = None # 映射变了也要重算
+                st.session_state.last_run_params = None
                 st.rerun()
 
     df_c = st.session_state.mapping_config
