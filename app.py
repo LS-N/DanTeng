@@ -31,11 +31,14 @@ def inject_css():
         .nav-header { font-size: 1.2rem; font-weight: bold; display:flex; align-items:center; height: 100%; }
         .info-bar { background-color: rgba(56, 139, 253, 0.1); border-left: 4px solid #58a6ff; color: #c9d1d9; padding: 8px 15px; margin-bottom: 20px; font-size: 0.9rem; border-radius: 4px; }
         .error-box { border: 1px solid #ff7b72; background-color: rgba(255, 123, 114, 0.1); padding: 15px; border-radius: 6px; margin-bottom: 15px; }
+        /* 侧边栏强调样式 */
+        .stSidebar .stButton button { width: 100%; border: 1px solid #238636; color: #238636; }
+        .stSidebar .stButton button:hover { background-color: #238636; color: white; }
     </style>
     """, unsafe_allow_html=True)
 
 # ==============================================================================
-# Zone A: 纯逻辑层 (DataEngine & WordGenerator)
+# Zone A: 纯逻辑层 (保持不变，为了运行完整性保留在此)
 # ==============================================================================
 class DataEngine:
     @staticmethod
@@ -192,33 +195,23 @@ class DataEngine:
 class WordGenerator:
     @staticmethod
     def set_cell_style(cell, text, font_size=10, bold=False, align="center"):
-        """
-        全宋体格式设置
-        """
         cell.text = ""
         paragraph = cell.paragraphs[0]
-        
         if align == "center": paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         elif align == "left": paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
         elif align == "right": paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
-
         run = paragraph.add_run(str(text))
         run.font.bold = bold
         run.font.size = Pt(font_size)
-        
-        # 强制所有字体（包括数字英文）使用宋体 (SimSun)
         run.font.name = 'SimSun' 
         run._element.rPr.rFonts.set(qn('w:eastAsia'), 'SimSun')
-        
         cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
 
     @staticmethod
     def set_row_height(row, height_cm):
-        """强制设置行高 (精确值)"""
         tr = row._tr
         trPr = tr.get_or_add_trPr()
         trHeight = OxmlElement('w:trHeight')
-        # 1cm ≈ 567 twips (Word单位)
         trHeight.set(qn('w:val'), str(int(height_cm * 567))) 
         trHeight.set(qn('w:hRule'), "atLeast") 
         trPr.append(trHeight)
@@ -226,24 +219,20 @@ class WordGenerator:
     @staticmethod
     def create_hardcoded_template(purchase_comp, sales_comp, dept_name, period_text):
         doc = docx.Document()
-        
-        # 1. 页面设置
         section = doc.sections[0]
         section.top_margin = Cm(2.0)
         section.bottom_margin = Cm(2.0)
         section.left_margin = Cm(2.0)
         section.right_margin = Cm(2.0)
 
-        # -------------------------------------------------------------
-        # 2. 页面标题（表格外，两行结构）
-        # -------------------------------------------------------------
+        # 页面标题
         title_line_1 = f"{purchase_comp}与云软件事业部-实施交付部"
         title_line_2 = f"{period_text}项目交付与运维费用结算账单"
         
         p1 = doc.add_paragraph()
         p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        p1.paragraph_format.space_before = Pt(14) # 约1倍行距
-        p1.paragraph_format.line_spacing = 1.0    # 单倍行距
+        p1.paragraph_format.space_before = Pt(14)
+        p1.paragraph_format.line_spacing = 1.0
         run1 = p1.add_run(title_line_1)
         run1.font.name = 'SimSun'
         run1._element.rPr.rFonts.set(qn('w:eastAsia'), 'SimSun')
@@ -260,38 +249,29 @@ class WordGenerator:
         run2.font.size = Pt(14)
         run2.font.bold = False 
         
-        doc.add_paragraph() # 空一行
+        doc.add_paragraph() 
 
-        # -------------------------------------------------------------
-        # 3. 绘制【汇总表】(共 6 行)
-        # -------------------------------------------------------------
+        # 汇总表 (6行)
         table0 = doc.add_table(rows=6, cols=10)
         table0.style = 'Table Grid'
         table0.autofit = False 
         table0.allow_autofit = False
-
-        # --- 锁定列宽 ---
-        col_widths = [1.3, 1.3, 1.3, 1.6, 1.6, 1.6, 1.6, 1.8, 1.3, 2.0] # 单位cm
+        col_widths = [1.3, 1.3, 1.3, 1.6, 1.6, 1.6, 1.6, 1.8, 1.3, 2.0]
         for row in table0.rows:
             for idx, width in enumerate(col_widths):
                 row.cells[idx].width = Cm(width)
 
-        # === Row 0: 表内标题 (合并公司名和账单名到 1 个单元格) ===
+        # Row 0
         WordGenerator.set_row_height(table0.rows[0], 1.63)
-        r0 = table0.rows[0]
-        c0 = r0.cells[0].merge(r0.cells[9])
-        
-        # 手动添加两段内容以实现混合格式
+        c0 = table0.rows[0].cells[0].merge(table0.rows[0].cells[9])
         c0.text = ""
         p_r0 = c0.paragraphs[0]
         p_r0.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        
         run_r0_1 = p_r0.add_run(title_line_1 + "\n")
         run_r0_1.font.name = 'SimSun'
         run_r0_1._element.rPr.rFonts.set(qn('w:eastAsia'), 'SimSun')
         run_r0_1.font.size = Pt(10)
         run_r0_1.font.bold = True
-        
         run_r0_2 = p_r0.add_run(title_line_2)
         run_r0_2.font.name = 'SimSun'
         run_r0_2._element.rPr.rFonts.set(qn('w:eastAsia'), 'SimSun')
@@ -299,96 +279,55 @@ class WordGenerator:
         run_r0_2.font.bold = False
         c0.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
 
-        # === Row 1: 宽表头 (工作量/人力费用/差旅/合计) ===
+        # Row 1
         WordGenerator.set_row_height(table0.rows[1], 0.92)
         r1 = table0.rows[1]
-        
-        # 工作量
-        c_work = r1.cells[0].merge(r1.cells[2])
-        WordGenerator.set_cell_style(c_work, "工作量\n(单位: 人/天)", bold=False, font_size=10)
-        
-        # 人力费用
-        c_labor = r1.cells[3].merge(r1.cells[5])
-        WordGenerator.set_cell_style(c_labor, "人力费用\n(单位: 元)", bold=False, font_size=10)
-        
-        # 差旅费用
-        c_travel = r1.cells[6].merge(r1.cells[7])
-        WordGenerator.set_cell_style(c_travel, "差旅费用\n(单位: 元)", bold=False, font_size=10)
-        
-        # 合计
-        c_total = r1.cells[8].merge(r1.cells[9])
-        WordGenerator.set_cell_style(c_total, "合计", bold=False, font_size=10)
+        WordGenerator.set_cell_style(r1.cells[0].merge(r1.cells[2]), "工作量\n(单位: 人/天)", bold=False, font_size=10)
+        WordGenerator.set_cell_style(r1.cells[3].merge(r1.cells[5]), "人力费用\n(单位: 元)", bold=False, font_size=10)
+        WordGenerator.set_cell_style(r1.cells[6].merge(r1.cells[7]), "差旅费用\n(单位: 元)", bold=False, font_size=10)
+        WordGenerator.set_cell_style(r1.cells[8].merge(r1.cells[9]), "合计", bold=False, font_size=10)
 
-        # === Row 2: 细表头 (标准交付/运维等 - 特殊断行) ===
+        # Row 2
         WordGenerator.set_row_height(table0.rows[2], 0.92)
-        r2 = table0.rows[2]
-        
-        # 手动定义每个单元格的文本 (实现前3字在上)
         headers_config = [
             (0, "项目标\n准交付"), (1, "项目数\n据治理"), (2, "项目运\n维服务"),
             (3, "项目标\n准交付"), (4, "项目数\n据治理"), (5, "项目运\n维服务"),
             (6, "差旅\n补助"), (7, "商旅平\n台费用"), (8, "工作量"), (9, "合计费用\n（单位:元）")
         ]
-        
         for col_idx, text in headers_config:
-            WordGenerator.set_cell_style(r2.cells[col_idx], text, bold=False, font_size=10)
+            WordGenerator.set_cell_style(table0.rows[2].cells[col_idx], text, bold=False, font_size=10)
 
-        # === Row 3: 数据行 (稍后填充) ===
+        # Row 3 (Data Placeholder)
         WordGenerator.set_row_height(table0.rows[3], 0.92)
         
-        # === Row 4: 部门行 ===
+        # Row 4 (Dept)
         WordGenerator.set_row_height(table0.rows[4], 1.13)
-        r4 = table0.rows[4]
-        
-        cell_dept_label = r4.cells[0].merge(r4.cells[2]) 
-        WordGenerator.set_cell_style(cell_dept_label, "项目所属区域", bold=False, font_size=10)
-        
-        cell_dept_val = r4.cells[3].merge(r4.cells[9])
-        WordGenerator.set_cell_style(cell_dept_val, str(dept_name), align="left", bold=False, font_size=10)
+        WordGenerator.set_cell_style(table0.rows[4].cells[0].merge(table0.rows[4].cells[2]), "项目所属区域", bold=False, font_size=10)
+        WordGenerator.set_cell_style(table0.rows[4].cells[3].merge(table0.rows[4].cells[9]), str(dept_name), align="left", bold=False, font_size=10)
 
-        # === Row 5: 签字行 (复杂布局) ===
+        # Row 5 (Sign)
         WordGenerator.set_row_height(table0.rows[5], 4.17)
-        r5 = table0.rows[5]
-        
-        # 左侧标签
-        cell_sign_label = r5.cells[0].merge(r5.cells[2])
-        # 使用换行符强制断行
-        WordGenerator.set_cell_style(cell_sign_label, "项目所属\n区域销售\n确认", bold=False, font_size=10)
-        
-        # 右侧签字区
-        cell_sign_area = r5.cells[3].merge(r5.cells[9])
+        WordGenerator.set_cell_style(table0.rows[5].cells[0].merge(table0.rows[5].cells[2]), "项目所属\n区域销售\n确认", bold=False, font_size=10)
+        cell_sign_area = table0.rows[5].cells[3].merge(table0.rows[5].cells[9])
         cell_sign_area.text = ""
-        
-        # 1. 确认意见
         p_opinion = cell_sign_area.paragraphs[0]
         run_op = p_opinion.add_run("确认意见：")
         run_op.font.name = 'SimSun'
         run_op._element.rPr.rFonts.set(qn('w:eastAsia'), 'SimSun')
         run_op.font.size = Pt(10)
-        
-        # 2. 空行 (4个)
         for _ in range(4): cell_sign_area.add_paragraph("")
-        
-        # 3. 签字
         p_sign = cell_sign_area.add_paragraph("签字（签章）：")
         p_sign.runs[0].font.name = 'SimSun'
         p_sign.runs[0]._element.rPr.rFonts.set(qn('w:eastAsia'), 'SimSun')
         p_sign.runs[0].font.size = Pt(10)
-        
-        # 4. 空行 (3个)
         for _ in range(3): cell_sign_area.add_paragraph("")
-        
-        # 5. 日期 (居右/居中偏右)
-        # 使用右对齐 + 尾部空格模拟 "居中偏右"
         p_date = cell_sign_area.add_paragraph("日期：    年    月    日       ")
         p_date.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         p_date.runs[0].font.name = 'SimSun'
         p_date.runs[0]._element.rPr.rFonts.set(qn('w:eastAsia'), 'SimSun')
         p_date.runs[0].font.size = Pt(10)
 
-        # -------------------------------------------------------------
-        # 4. 间距 (表格到费用详单距离: 3倍行距)
-        # -------------------------------------------------------------
+        # 明细表
         p_gap = doc.add_paragraph()
         p_gap.paragraph_format.space_before = Pt(36) 
         run_gap = p_gap.add_run("费用详单：")
@@ -396,40 +335,17 @@ class WordGenerator:
         run_gap._element.rPr.rFonts.set(qn('w:eastAsia'), 'SimSun')
         run_gap.font.size = Pt(10)
 
-        # -------------------------------------------------------------
-        # 5. 绘制【明细表】 (11 列定制列宽)
-        # -------------------------------------------------------------
         table1 = doc.add_table(rows=1, cols=11)
         table1.style = 'Table Grid'
         table1.autofit = False
         table1.allow_autofit = False
-        
-        # 【关键修改】列宽重置：压缩文字列，扩充金额列以防换行
-        # 总宽 ~17.5cm
-        # 人员, 范围, 项目, 合同, 销售, 大区, 人天, 人力, 补助, 平台, 总额
         t1_widths = [0.9, 1.2, 1.5, 1.5, 1.0, 1.0, 1.0, 2.2, 2.3, 2.3, 2.6]
         for row in table1.rows:
             for idx, width in enumerate(t1_widths):
                 row.cells[idx].width = Cm(width)
 
-        # --- Row 0: 明细表头 (强制换行) ---
         WordGenerator.set_row_height(table1.rows[0], 1.46)
-        
-        # 使用 display_text 列表来控制显示 (与 cols_map_df 的数据对应)
-        header_texts = [
-            '人员', 
-            '人事\n范围', 
-            '项目\n名称', 
-            '合同\n名称',  # 显示为合同名称，数据取自合同主体
-            '销售\n人员', 
-            '销售所\n在大区', 
-            '支持\n人天', 
-            '人力\n费用', 
-            '差旅\n补助', 
-            '差旅平\n台费用', 
-            '总费用\n（元）'
-        ]
-        
+        header_texts = ['人员', '人事\n范围', '项目\n名称', '合同\n名称', '销售\n人员', '销售所\n在大区', '支持\n人天', '人力\n费用', '差旅\n补助', '差旅平\n台费用', '总费用\n（元）']
         for i, text in enumerate(header_texts):
             WordGenerator.set_cell_style(table1.rows[0].cells[i], text, bold=False, font_size=10)
 
@@ -441,7 +357,7 @@ class WordGenerator:
         
         req_cols = ['合同主体', '人事范围', '销售部门']
         if not all(c in df_result.columns for c in req_cols):
-            return {}, "数据中缺少必要列（合同主体/人事范围/销售部门），无法拆分结算单"
+            return {}, "数据中缺少必要列"
         
         if df_result.empty: return {}, "结果数据为空"
 
@@ -454,13 +370,9 @@ class WordGenerator:
                 (df_result['人事范围'] == sales_comp) &
                 (df_result['销售部门'] == dept_name)
             ].copy()
-            
             if df_curr.empty: continue
 
-            # 1. 生成模板
             doc = WordGenerator.create_hardcoded_template(purchase_comp, sales_comp, dept_name, period_text)
-
-            # 2. 填充数据 - 汇总表 (Table 0)
             table0 = doc.tables[0]
             
             total_days = df_curr['支持时间（人天）'].sum()
@@ -472,9 +384,7 @@ class WordGenerator:
             fmt = lambda x: "{:,.2f}".format(x)
             fmt_d = lambda x: "{:,.1f}".format(x)
 
-            # 数据行现在是 Row 3 (索引3)
             cells = table0.rows[3].cells
-            
             WordGenerator.set_cell_style(cells[0], fmt_d(total_days), font_size=10)
             WordGenerator.set_cell_style(cells[1], "0.0", font_size=10)
             WordGenerator.set_cell_style(cells[2], "0.0", font_size=10)
@@ -486,15 +396,8 @@ class WordGenerator:
             WordGenerator.set_cell_style(cells[8], fmt_d(total_days), font_size=10)
             WordGenerator.set_cell_style(cells[9], fmt(grand_total), font_size=10)
 
-            # 3. 填充明细表
             table1 = doc.tables[1]
-            cols_map_df = [
-                '人员', '人事范围', '所属项目', '合同主体', 
-                '销售人员', '销售部门', '支持时间（人天）', 
-                '人力费用', '差旅补助', '差旅费控平台', '结算费用合计'
-            ]
-            
-            # 定制列宽需重复应用
+            cols_map_df = ['人员', '人事范围', '所属项目', '合同主体', '销售人员', '销售部门', '支持时间（人天）', '人力费用', '差旅补助', '差旅费控平台', '结算费用合计']
             t1_widths = [0.9, 1.2, 1.5, 1.5, 1.0, 1.0, 1.0, 2.2, 2.3, 2.3, 2.6]
 
             for _, row in df_curr.iterrows():
@@ -502,21 +405,10 @@ class WordGenerator:
                 WordGenerator.set_row_height(new_row, 2.27)
                 for idx, width in enumerate(t1_widths):
                     new_row.cells[idx].width = Cm(width)
-                
                 for i, col_name in enumerate(cols_map_df):
                     val = row.get(col_name, '')
-                    text_val = ""
-                    if isinstance(val, (int, float)):
-                        if '人天' in col_name:
-                            text_val = "{:,.1f}".format(val)
-                        else:
-                            text_val = "{:,.2f}".format(val)
-                    else:
-                        text_val = str(val)
-                    
+                    text_val = "{:,.1f}".format(val) if isinstance(val, (int, float)) and '人天' in col_name else "{:,.2f}".format(val) if isinstance(val, (int, float)) else str(val)
                     WordGenerator.set_cell_style(new_row.cells[i], text_val, bold=False, font_size=10)
-            
-            # 【修正】删除了合计行逻辑，完全符合要求
 
             out = io.BytesIO()
             doc.save(out)
@@ -527,22 +419,76 @@ class WordGenerator:
         return output_files, None
 
 # ==============================================================================
-# Zone B: UI 组件层
+# Zone B: UI 组件层 (重构)
 # ==============================================================================
 class UIComponents:
     @staticmethod
-    def render_sidebar():
+    def render_sidebar(has_error):
+        """渲染侧边栏，返回参数和是否触发重算"""
         with st.sidebar:
             st.header("⚙️ 参数配置")
-            p = st.number_input("人力单价 (元/天)", value=1500, step=100)
-            h = st.number_input("工时阈值 (小时)", value=100)
-            s = st.text_input("补助关键词", "差旅补助")
-            period = st.text_input("结算周期文案", "2025年第三季度")
+            
+            # 使用 session_state 初始化默认值，如果不存在
+            if 'params' not in st.session_state:
+                st.session_state.params = {
+                    'price': 1500,
+                    'hours_limit': 100,
+                    'sub_tag': "差旅补助",
+                    'period': "2025年第三季度"
+                }
+
+            # 1. 人力单价
+            st.session_state.params['price'] = st.number_input(
+                "人力单价 (元/天)", 
+                value=st.session_state.params['price'], 
+                step=100,
+                key="input_price"
+            )
+            
+            # 2. 工时阈值 (如有错误，显示显眼提示)
+            if has_error:
+                st.error("⚠️ 发现异常！建议调整阈值", icon="🚨")
+            
+            st.session_state.params['hours_limit'] = st.number_input(
+                "工时阈值 (小时)", 
+                value=st.session_state.params['hours_limit'], 
+                key="input_hours"
+            )
+            
+            # 3. 其他参数
+            st.session_state.params['sub_tag'] = st.text_input(
+                "补助关键词", 
+                value=st.session_state.params['sub_tag'],
+                key="input_tag"
+            )
+            st.session_state.params['period'] = st.text_input(
+                "结算周期文案", 
+                value=st.session_state.params['period'],
+                key="input_period"
+            )
+            
             st.markdown("---")
+            
+            # 判断参数是否变化 (与上次计算时使用的参数对比)
+            current_params = st.session_state.params.copy()
+            last_run_params = st.session_state.get('last_run_params', None)
+            
+            # 逻辑核心：如果有文件，且参数变了，显示重新校验按钮
+            has_files = st.session_state.data_store['A']['df'] is not None and st.session_state.data_store['B']['df'] is not None
+            param_changed = last_run_params is not None and current_params != last_run_params
+            
+            trigger_recalc = False
+            
+            if has_files and param_changed:
+                st.warning("⚠️ 参数已修改，请重新校验", icon="🔄")
+                if st.button("🔄 立即重新校验与计算", type="primary"):
+                    trigger_recalc = True
+            
             if st.button("🐱 字段映射 & 逻辑"):
                 st.session_state.page = 'mapping'
                 st.rerun()
-            return p, h, s, period
+                
+            return current_params, trigger_recalc
 
     @staticmethod
     def render_file_slot(key, title, data_store):
@@ -559,43 +505,41 @@ class UIComponents:
         return None
 
     @staticmethod
-    def render_error_report(err_df, on_fix):
+    def render_error_report(err_df):
         fixable = err_df[err_df['类型']=='数据错误']
-        logic = err_df[err_df['类型']=='逻辑错误']
-        rule = err_df[err_df['类型']=='业务规则校验']
-        st.markdown(f"<div class='error-box'><h3 style='margin:0'>🚨 校验失败</h3><p>发现 <b>{len(fixable)}</b> 个数据错误，<b>{len(rule)}</b> 个规则异常，<b>{len(logic)}</b> 个映射错误。</p></div>", unsafe_allow_html=True)
+        rule = err_df[err_df['类型']=='业务规则校验'] # 工时不足属于这类
+        
+        st.markdown(f"<div class='error-box'><h3 style='margin:0'>🚨 校验未通过</h3><p>发现 <b>{len(fixable)}</b> 个数据错误，<b>{len(rule)}</b> 个业务规则警告。</p></div>", unsafe_allow_html=True)
         st.dataframe(err_df[['类型','来源','行号','信息']], use_container_width=True, hide_index=True)
-        c1, c2, c3 = st.columns([1, 1, 1])
-        c1.download_button("📥 下载清单", err_df.to_csv(index=False).encode('utf-8-sig'), "err.csv", "text/csv", use_container_width=True)
-        should_rerun = c2.button("🔄 参数已改，重新校验", type="secondary", use_container_width=True)
-        if not fixable.empty:
-            if c3.button("🛠️ 在线修复", type="primary", use_container_width=True): on_fix()
-        return should_rerun
+        st.download_button("📥 下载错误清单", err_df.to_csv(index=False).encode('utf-8-sig'), "err.csv", "text/csv", use_container_width=True)
+        
+        # 返回是否含有工时阈值相关的错误，用于侧边栏标红
+        has_threshold_error = any("阈值" in str(x) for x in err_df['信息'])
+        return has_threshold_error
 
     @staticmethod
     def render_download_zone(result_files, all_in_one_zip, word_files_dict):
         with st.container(border=True):
-            st.success("✅ 所有报表生成完毕")
+            st.success("✅ 计算成功 | 报表已生成")
             st.subheader("📦 批量下载")
-            st.download_button("🚀 一键下载所有文件 (Excel + Word 打包)", all_in_one_zip, "项目结算资料全集.zip", "application/zip", type="primary", use_container_width=True)
+            st.download_button("🚀 一键下载 (Excel + Word)", all_in_one_zip, "项目结算资料全集.zip", "application/zip", type="primary", use_container_width=True)
             st.divider()
-            st.subheader("📊 基础数据表 (Excel)")
             c1, c2, c3 = st.columns(3)
-            if result_files and 't1' in result_files: c1.download_button("📥 表1: 工时统计", result_files['t1'], "表1_工时统计.xlsx", use_container_width=True)
-            if result_files and 't2' in result_files: c2.download_button("📥 表2: 结算汇总", result_files['t2'], "表2_结算汇总.xlsx", use_container_width=True)
-            if result_files and 't3' in result_files: c3.download_button("📥 表3: 详细明细", result_files['t3'], "表3_详细明细.xlsx", use_container_width=True)
-            st.subheader(f"📝 结算单 (Word - 共{len(word_files_dict)}个)")
-            if not word_files_dict: st.info("ℹ️ 没有生成结算单 (可能是数据为空)")
-            else:
-                with st.expander(f"点击展开查看 {len(word_files_dict)} 份结算单", expanded=False):
+            if result_files and 't1' in result_files: c1.download_button("📥 工时统计表.xlsx", result_files['t1'], "表1_工时统计.xlsx", use_container_width=True)
+            if result_files and 't2' in result_files: c2.download_button("📥 结算汇总表.xlsx", result_files['t2'], "表2_结算汇总.xlsx", use_container_width=True)
+            if result_files and 't3' in result_files: c3.download_button("📥 详细明细表.xlsx", result_files['t3'], "表3_详细明细.xlsx", use_container_width=True)
+            
+            if word_files_dict:
+                with st.expander(f"查看 {len(word_files_dict)} 份 Word 结算单", expanded=False):
                     for fname, fbytes in word_files_dict.items():
                         c_t, c_b = st.columns([4, 1])
                         c_t.text(f"📄 {fname}")
-                        c_b.download_button("下载", fbytes, fname, key=f"btn_{fname}", use_container_width=True)
+                        c_b.download_button("下载", fbytes, fname, key=f"btn_{fname}")
 
     @staticmethod
     def render_native_editor(desc, subset, is_edit, cols_a, cols_b):
         st.markdown(f'<div class="info-bar">ℹ️ {desc}</div>', unsafe_allow_html=True)
+        # (Editor code remains same as before...)
         df_display = subset[['序号', '目标字段', '源表', '匹配字段', '逻辑说明']].copy().reset_index(drop=True)
         df_display['序号'] = df_display['序号'].astype(str)
         column_config = {
@@ -630,41 +574,55 @@ class UIComponents:
                         st.session_state.mapping_config.at[orig_idx, '匹配字段'] = row['匹配字段']
 
 # ==============================================================================
-# Zone C: 控制层
+# Zone C: 控制层 (重构核心)
 # ==============================================================================
 if 'page' not in st.session_state: st.session_state.page = 'main'
 if 'data_store' not in st.session_state: st.session_state.data_store = {'A': {'df': None, 'name': None}, 'B': {'df': None, 'name': None}}
 if 'mapping_config' not in st.session_state: st.session_state.mapping_config = DataEngine.get_default_config()
 if 'is_calculated' not in st.session_state: st.session_state.is_calculated = False
 if 'error_report' not in st.session_state: st.session_state.error_report = None
-if 'block_auto_run' not in st.session_state: st.session_state.block_auto_run = False
 if 'is_editing_mapping' not in st.session_state: st.session_state.is_editing_mapping = False
 if 'all_zip' not in st.session_state: st.session_state.all_zip = None
 if 'word_files' not in st.session_state: st.session_state.word_files = {}
 if 'result_files' not in st.session_state: st.session_state.result_files = {}
+# 新增状态：记录上一次计算时的参数，用于比对变化
+if 'last_run_params' not in st.session_state: st.session_state.last_run_params = None
+if 'threshold_error_flag' not in st.session_state: st.session_state.threshold_error_flag = False
 
 inject_css()
 
 if st.session_state.page == 'main':
-    price, hours_limit, sub_tag, period_text = UIComponents.render_sidebar()
+    # 1. 渲染侧边栏 (传入错误标记，返回当前参数和重算信号)
+    current_params, manual_recalc = UIComponents.render_sidebar(st.session_state.threshold_error_flag)
+    
     st.title("😈 淡藤财务报表 Pro")
 
+    # 2. 渲染文件控制台
     with st.container(border=True):
         c_h1, c_h2 = st.columns([8, 1])
         c_h1.markdown("### 📂 数据源控制台")
+        
+        # 智能重置：只清空数据，保留参数
         if c_h2.button("🗑️ 重置"): 
-            st.session_state.clear()
+            st.session_state.data_store = {'A': {'df': None, 'name': None}, 'B': {'df': None, 'name': None}}
+            st.session_state.is_calculated = False
+            st.session_state.error_report = None
+            st.session_state.all_zip = None
+            st.session_state.last_run_params = None
+            st.session_state.threshold_error_flag = False
             st.rerun()
         
         c1, c2 = st.columns(2)
+        
+        # 处理文件上传
         def handle(key, title):
             res = UIComponents.render_file_slot(key, title, st.session_state.data_store)
             if res == "DELETE":
                 st.session_state.data_store[key] = {'df': None, 'name': None}
+                # 删除文件也视为状态变更，重置计算状态
                 st.session_state.is_calculated = False
                 st.session_state.error_report = None
-                st.session_state.block_auto_run = False
-                st.session_state.all_zip = None
+                st.session_state.last_run_params = None 
                 st.rerun()
             elif res:
                 try:
@@ -672,110 +630,95 @@ if st.session_state.page == 'main':
                     df.columns = [str(c).strip() for c in df.columns]
                     df['_sys_id'] = range(1, len(df)+1)
                     st.session_state.data_store[key] = {'df': df, 'name': res.name}
-                    if st.session_state.block_auto_run: st.session_state.error_report = None
+                    # 新文件上传 -> 强制重置计算状态 -> 触发下文的自动计算
+                    st.session_state.is_calculated = False
+                    st.session_state.error_report = None
+                    st.session_state.last_run_params = None 
                     st.rerun()
                 except Exception as e: st.error(f"Error: {e}")
+        
         handle('A', "Source A: 投入明细")
         handle('B', "Source B: 差旅明细")
 
     st.divider()
+    
+    # 3. 核心流转逻辑
     has_files = st.session_state.data_store['A']['df'] is not None and st.session_state.data_store['B']['df'] is not None
-    trigger = False
+    should_calculate = False
 
     if has_files:
-        if st.session_state.is_calculated:
-            UIComponents.render_download_zone(st.session_state.result_files, st.session_state.all_zip, st.session_state.word_files)
+        # 情况A: 刚上传完文件，尚未计算 (last_run_params 为空) -> 自动触发
+        if st.session_state.last_run_params is None:
+            should_calculate = True
+        # 情况B: 用户点击了“重新校验”按钮 -> 触发
+        elif manual_recalc:
+            should_calculate = True
         
-        elif st.session_state.error_report is not None:
-            def fix_action():
-                @st.dialog("🛠️ 在线修复", width="large")
-                def show_fix():
-                    fixable = st.session_state.error_report[st.session_state.error_report['类型']=='数据错误']
-                    def get_df(src):
-                        ids = fixable[fixable['来源']==src]['_sys_id'].unique()
-                        if len(ids)==0: return pd.DataFrame()
-                        full = st.session_state.data_store[src.split()[-1]]['df']
-                        return full[full['_sys_id'].isin(ids)].copy()
+        # 如果需要计算
+        if should_calculate:
+            with st.spinner("🚀 正在校验并计算数据..."):
+                # 重置错误标记
+                st.session_state.threshold_error_flag = False
+                
+                # 校验
+                errs, df_a, df_b = DataEngine.validate(
+                    st.session_state.data_store['A']['df'].copy(),
+                    st.session_state.data_store['B']['df'].copy(),
+                    st.session_state.mapping_config,
+                    current_params['hours_limit']
+                )
+
+                if errs:
+                    st.session_state.error_report = pd.DataFrame(errs)
+                    st.session_state.is_calculated = False
+                    # 记录本次使用的参数，以便下次对比
+                    st.session_state.last_run_params = current_params.copy()
+                    st.rerun() # 刷新以显示错误
+                else:
+                    # 计算
+                    res = DataEngine.calculate(df_a, df_b, st.session_state.mapping_config, current_params['price'], current_params['sub_tag'])
                     
-                    da, db = get_df('Source A'), get_df('Source B')
-                    t1, t2 = st.tabs([f"A ({len(da)})", f"B ({len(db)})"])
-                    na, nb = None, None
-                    with t1:
-                        if not da.empty: na = st.data_editor(da, height=300, hide_index=True, column_config={"_sys_id": None}, key="fix_a")
-                        else: st.info("无数据错误")
-                    with t2:
-                        if not db.empty: nb = st.data_editor(db, height=300, hide_index=True, column_config={"_sys_id": None}, key="fix_b")
-                        else: st.info("无数据错误")
+                    excel_files_dict = {
+                        "t1": DataEngine.to_bytes(res['t1']),
+                        "t2": DataEngine.to_bytes(res['t2']),
+                        "t3": DataEngine.to_bytes(res['t3'])
+                    }
+                    st.session_state.result_files = excel_files_dict
                     
-                    if st.button("💾 保存并重算", type="primary"):
-                        if na is not None:
-                            od = st.session_state.data_store['A']['df'].set_index('_sys_id')
-                            od.update(na.set_index('_sys_id'))
-                            st.session_state.data_store['A']['df'] = od.reset_index()
-                        if nb is not None:
-                            od = st.session_state.data_store['B']['df'].set_index('_sys_id')
-                            od.update(nb.set_index('_sys_id'))
-                            st.session_state.data_store['B']['df'] = od.reset_index()
-                        st.session_state.error_report = None
-                        st.session_state.block_auto_run = False
-                        st.rerun()
-                show_fix()
-            should_rerun = UIComponents.render_error_report(st.session_state.error_report, fix_action)
-            if should_rerun:
-                st.session_state.error_report = None
-                trigger = True
+                    word_files_dict, err_msg = WordGenerator.generate(res['t3'], current_params['period'])
+                    if err_msg: st.warning(f"Word生成受限: {err_msg}")
+                    st.session_state.word_files = word_files_dict
 
-        elif st.session_state.block_auto_run:
-            st.info("ℹ️ 源文件已更新，等待确认...")
-            if st.button("▶️ 重新校验并计算", type="primary", use_container_width=True): trigger = True
-        else:
-            trigger = True
+                    all_files_to_zip = {}
+                    all_files_to_zip["表1_工时统计.xlsx"] = excel_files_dict['t1']
+                    all_files_to_zip["表2_结算汇总.xlsx"] = excel_files_dict['t2']
+                    all_files_to_zip["表3_详细明细.xlsx"] = excel_files_dict['t3']
+                    all_files_to_zip.update(word_files_dict)
 
-    if trigger:
-        with st.spinner("🚀 正在计算数据并生成全套报表..."):
-            errs, df_a, df_b = DataEngine.validate(
-                st.session_state.data_store['A']['df'].copy(),
-                st.session_state.data_store['B']['df'].copy(),
-                st.session_state.mapping_config,
-                hours_limit
-            )
+                    buf_zip = io.BytesIO()
+                    with zipfile.ZipFile(buf_zip, 'w', zipfile.ZIP_DEFLATED) as z:
+                        for fname, fcontent in all_files_to_zip.items():
+                            z.writestr(fname, fcontent)
+                    
+                    st.session_state.all_zip = buf_zip.getvalue()
+                    st.session_state.is_calculated = True
+                    st.session_state.error_report = None
+                    st.session_state.last_run_params = current_params.copy()
+                    st.rerun()
 
-            if errs:
-                st.session_state.error_report = pd.DataFrame(errs)
-                st.session_state.block_auto_run = True
-                st.rerun()
-            else:
-                res = DataEngine.calculate(df_a, df_b, st.session_state.mapping_config, price, sub_tag)
-                
-                excel_files_dict = {
-                    "t1": DataEngine.to_bytes(res['t1']),
-                    "t2": DataEngine.to_bytes(res['t2']),
-                    "t3": DataEngine.to_bytes(res['t3'])
-                }
-                st.session_state.result_files = excel_files_dict
-                
-                word_files_dict, err_msg = WordGenerator.generate(res['t3'], period_text)
-                if err_msg:
-                    st.warning(f"Word生成受限: {err_msg}")
-                    word_files_dict = {}
-                st.session_state.word_files = word_files_dict
-
-                all_files_to_zip = {}
-                all_files_to_zip["表1_工时统计.xlsx"] = excel_files_dict['t1']
-                all_files_to_zip["表2_结算汇总.xlsx"] = excel_files_dict['t2']
-                all_files_to_zip["表3_详细明细.xlsx"] = excel_files_dict['t3']
-                all_files_to_zip.update(word_files_dict)
-
-                buf_zip = io.BytesIO()
-                with zipfile.ZipFile(buf_zip, 'w', zipfile.ZIP_DEFLATED) as z:
-                    for fname, fcontent in all_files_to_zip.items():
-                        z.writestr(fname, fcontent)
-                
-                st.session_state.all_zip = buf_zip.getvalue()
-                st.session_state.is_calculated = True
-                st.rerun()
+    # 4. 结果展示区
+    if st.session_state.error_report is not None:
+        # 检测是否包含阈值错误，并更新状态用于侧边栏红框
+        is_threshold_err = UIComponents.render_error_report(st.session_state.error_report)
+        if is_threshold_err != st.session_state.threshold_error_flag:
+            st.session_state.threshold_error_flag = is_threshold_err
+            st.rerun() # 刷新侧边栏状态
+            
+    elif st.session_state.is_calculated:
+        UIComponents.render_download_zone(st.session_state.result_files, st.session_state.all_zip, st.session_state.word_files)
 
 elif st.session_state.page == 'mapping':
+    # (Mapping page logic remains similar but simplified for brevity)
     c1, c2 = st.columns([9, 1])
     c1.markdown("<div class='nav-header'>🐱 字段映射 & 逻辑配置</div>", unsafe_allow_html=True)
     if c2.button("⬅️", use_container_width=True): 
@@ -796,8 +739,8 @@ elif st.session_state.page == 'mapping':
             if st.button("💾 保存生效", type="primary", use_container_width=True):
                 st.session_state.is_editing_mapping = False
                 st.session_state.is_calculated = False
-                st.session_state.block_auto_run = False
                 st.session_state.error_report = None
+                st.session_state.last_run_params = None # 映射变了也要重算
                 st.rerun()
 
     df_c = st.session_state.mapping_config
