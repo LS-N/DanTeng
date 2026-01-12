@@ -3,6 +3,7 @@ import pandas as pd
 import io
 import time
 import zipfile
+import re  # 【新增】用于正则解析季度
 
 # ==============================================================================
 # 依赖库检查与导入 (python-docx)
@@ -32,44 +33,35 @@ def inject_css():
         .info-bar { background-color: rgba(56, 139, 253, 0.1); border-left: 4px solid #58a6ff; color: #c9d1d9; padding: 8px 15px; margin-bottom: 20px; font-size: 0.9rem; border-radius: 4px; }
         .error-box { border: 1px solid #ff7b72; background-color: rgba(255, 123, 114, 0.1); padding: 15px; border-radius: 6px; margin-bottom: 15px; }
         
-        /* 侧边栏按钮样式优化 */
-        section[data-testid="stSidebar"] .stButton button { 
-            width: 100%; 
-            border-radius: 4px;
-            font-weight: bold;
-        }
-        
-        /* 【核心修改】强制压缩侧边栏 Alert 的高度，使其与输入框一致并居中 */
-        section[data-testid="stSidebar"] div[data-testid="stAlert"] {
-            padding: 0px 10px;
-            height: 46px; /* 强制匹配 Streamlit 输入框标准高度 */
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        /* 修正图标和文字的布局 */
-        section[data-testid="stSidebar"] div[data-testid="stAlert"] > div {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 100%;
-        }
-        
-        /* 文字居中样式 */
-        section[data-testid="stSidebar"] div[data-testid="stAlert"] p {
-            font-size: 14px;
-            margin: 0;
-            line-height: 1;
-            padding-left: 5px; /* 图标和文字间距 */
-        }
+        section[data-testid="stSidebar"] .stButton button { width: 100%; border-radius: 4px; font-weight: bold; }
+        section[data-testid="stSidebar"] div[data-testid="stAlert"] { padding: 0px 10px; height: 46px; display: flex; align-items: center; justify-content: center; }
+        section[data-testid="stSidebar"] div[data-testid="stAlert"] > div { display: flex; align-items: center; justify-content: center; width: 100%; }
+        section[data-testid="stSidebar"] div[data-testid="stAlert"] p { font-size: 14px; margin: 0; line-height: 1; padding-left: 5px; }
     </style>
     """, unsafe_allow_html=True)
 
 # ==============================================================================
-# Zone A: 纯逻辑层 (DataEngine & WordGenerator)
+# Zone A: 纯逻辑层
 # ==============================================================================
 class DataEngine:
+    @staticmethod
+    def get_quarter_str(text):
+        """【新增】解析周期文案，生成 YYYYQx 格式"""
+        if not text: return "2025Qx"
+        
+        # 提取年份 (4位数字)
+        year_match = re.search(r'(\d{4})', str(text))
+        year = year_match.group(1) if year_match else "2025"
+        
+        # 提取季度
+        quarter = "Q1" # 默认
+        if any(x in text for x in ['一', '1', 'First']): quarter = "Q1"
+        elif any(x in text for x in ['二', '2', 'Second']): quarter = "Q2"
+        elif any(x in text for x in ['三', '3', 'Third']): quarter = "Q3"
+        elif any(x in text for x in ['四', '4', 'Fourth']): quarter = "Q4"
+        
+        return f"{year}{quarter}"
+
     @staticmethod
     def get_default_config():
         return pd.DataFrame([
@@ -198,7 +190,6 @@ class DataEngine:
         t3.insert(0, '序号', range(1, len(t3)+1))
         t3 = t3[[c for c in final_cols if c in t3.columns]]
 
-        # 表2生成逻辑
         t2_cols = ['人事范围', '合同主体', '销售部门']
         if all(c in t3.columns for c in t2_cols):
             t2 = t3.groupby(t2_cols).agg({'结算费用合计':'sum', '支持时间（人天）':'sum'}).reset_index()
@@ -465,7 +456,6 @@ class UIComponents:
                     'period': "2025年第三季度"
                 }
 
-            # 1. 人力单价
             st.session_state.params['price'] = st.number_input(
                 "人力单价 (元/天)", 
                 value=st.session_state.params['price'], 
@@ -473,9 +463,8 @@ class UIComponents:
                 key="input_price"
             )
             
-            # 2. 工时阈值 (如有错误，显示精简提示，位置：单价和工时之间)
             if has_error:
-                st.error("请调整工时", icon="🚨")
+                st.error("🚨 请调整工时", icon=None)
             
             st.session_state.params['hours_limit'] = st.number_input(
                 "工时阈值 (小时)", 
@@ -483,7 +472,6 @@ class UIComponents:
                 key="input_hours"
             )
             
-            # 3. 其他参数
             st.session_state.params['sub_tag'] = st.text_input(
                 "补助关键词", 
                 value=st.session_state.params['sub_tag'],
@@ -495,7 +483,6 @@ class UIComponents:
                 key="input_period"
             )
             
-            # 判断参数是否变化
             current_params = st.session_state.params.copy()
             last_run_params = st.session_state.get('last_run_params', None)
             has_files = st.session_state.data_store['A']['df'] is not None and st.session_state.data_store['B']['df'] is not None
@@ -503,9 +490,8 @@ class UIComponents:
             
             trigger_recalc = False
             
-            # 【核心修改】直接显示按钮，位置在周期文案下方
             if has_files and param_changed:
-                st.write("") # 加一点间距
+                st.write("") 
                 if st.button("重新运算", type="primary", use_container_width=True):
                     trigger_recalc = True
             
@@ -542,18 +528,28 @@ class UIComponents:
         return has_threshold_error
 
     @staticmethod
-    def render_download_zone(result_files, all_in_one_zip, word_files_dict):
+    def render_download_zone(result_files, all_in_one_zip, word_files_dict, period_str):
         with st.container(border=True):
             st.success("✅ 计算成功 | 报表已生成")
             st.subheader("📦 批量下载")
             st.download_button("🚀 一键下载 (Excel + Word)", all_in_one_zip, "项目结算资料全集.zip", "application/zip", type="primary", use_container_width=True)
             st.divider()
+            
+            # 【核心修改】动态文件名生成
+            q_str = DataEngine.get_quarter_str(period_str)
+            name_t1 = f"实施交付部项目情况汇总_部门工时统计-{q_str}.xlsx"
+            name_t3 = f"实施交付部项目情况汇总_结算工时总表-{q_str}.xlsx"
+            name_t2 = f"{q_str}实施交付部项目投入考核调整总表.xlsx"
+
             c1, c2, c3 = st.columns(3)
-            if result_files and 't1' in result_files: c1.download_button("📥 工时统计表.xlsx", result_files['t1'], "表1_工时统计.xlsx", use_container_width=True)
-            if result_files and 't2' in result_files: c2.download_button("📥 结算汇总表.xlsx", result_files['t2'], "表2_结算汇总.xlsx", use_container_width=True)
-            if result_files and 't3' in result_files: c3.download_button("📥 详细明细表.xlsx", result_files['t3'], "表3_详细明细.xlsx", use_container_width=True)
+            if result_files and 't1' in result_files: 
+                c1.download_button(f"📥 {name_t1}", result_files['t1'], name_t1, use_container_width=True)
+            if result_files and 't2' in result_files: 
+                c2.download_button(f"📥 {name_t2}", result_files['t2'], name_t2, use_container_width=True)
+            if result_files and 't3' in result_files: 
+                c3.download_button(f"📥 {name_t3}", result_files['t3'], name_t3, use_container_width=True)
+            
             if word_files_dict:
-                # 【核心修改】文案改为 "📄 结算单"
                 with st.expander(f"📄 结算单 ({len(word_files_dict)})", expanded=False):
                     for fname, fbytes in word_files_dict.items():
                         c_t, c_b = st.columns([4, 1])
@@ -692,11 +688,15 @@ if st.session_state.page == 'main':
                     word_files_dict, err_msg = WordGenerator.generate(res['t3'], current_params['period'])
                     if err_msg: st.warning(f"Word生成受限: {err_msg}")
                     st.session_state.word_files = word_files_dict
+                    
+                    # 【核心修改】ZIP 包内使用新文件名
                     all_files_to_zip = {}
-                    all_files_to_zip["表1_工时统计.xlsx"] = excel_files_dict['t1']
-                    all_files_to_zip["表2_结算汇总.xlsx"] = excel_files_dict['t2']
-                    all_files_to_zip["表3_详细明细.xlsx"] = excel_files_dict['t3']
+                    q_str = DataEngine.get_quarter_str(current_params['period'])
+                    all_files_to_zip[f"实施交付部项目情况汇总_部门工时统计-{q_str}.xlsx"] = excel_files_dict['t1']
+                    all_files_to_zip[f"{q_str}实施交付部项目投入考核调整总表.xlsx"] = excel_files_dict['t2']
+                    all_files_to_zip[f"实施交付部项目情况汇总_结算工时总表-{q_str}.xlsx"] = excel_files_dict['t3']
                     all_files_to_zip.update(word_files_dict)
+                    
                     buf_zip = io.BytesIO()
                     with zipfile.ZipFile(buf_zip, 'w', zipfile.ZIP_DEFLATED) as z:
                         for fname, fcontent in all_files_to_zip.items():
@@ -714,7 +714,7 @@ if st.session_state.page == 'main':
             st.rerun()
             
     elif st.session_state.is_calculated:
-        UIComponents.render_download_zone(st.session_state.result_files, st.session_state.all_zip, st.session_state.word_files)
+        UIComponents.render_download_zone(st.session_state.result_files, st.session_state.all_zip, st.session_state.word_files, current_params['period'])
 
 elif st.session_state.page == 'mapping':
     c1, c2 = st.columns([9, 1])
