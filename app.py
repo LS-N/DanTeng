@@ -799,20 +799,46 @@ elif st.session_state.page == 'mapping':
         current_options = list(dict.fromkeys(current_options))
         
         with t1: 
-            # 如果 A 和 B 都没传，整列禁用；如果传了任意一个，解锁但受 save_and_validate 保护
-            disable_match_field_col = not (bool(cols_a) or bool(cols_b))
+            df_t3 = df_c[df_c["所属表"]=="结果表3"]
             
-            # 渲染编辑器
-            edited_t3 = UIComponents.render_native_editor(
-                "全量明细底表", 
-                df_c[df_c["所属表"]=="结果表3"], 
-                is_default, 
-                current_options, 
-                disable_match_field_col
+            # --- 物理拆分方案：彻底解决平台限制 ---
+            
+            # 1. Source A 映射区
+            st.markdown("#### 📂 Source A 字段映射 (工时统计)")
+            df_a_subset = df_t3[df_t3["源表"] == "Source A"]
+            if not cols_a and not is_default:
+                st.warning("⚠️ 请先在上方上传 'Source A 工时统计' 样例数据以解锁此区域。")
+            edited_a = UIComponents.render_native_editor(
+                "Source A 配置", 
+                df_a_subset, 
+                is_default or not cols_a, 
+                cols_a, 
+                not cols_a
             )
+            if not is_default and edited_a is not None: save_and_validate(edited_a)
             
-            if not is_default and edited_t3 is not None: 
-                save_and_validate(edited_t3)
+            st.divider()
+            
+            # 2. Source B 映射区
+            st.markdown("#### 📂 Source B 字段映射 (差旅明细)")
+            df_b_subset = df_t3[df_t3["源表"] == "Source B"]
+            if not cols_b and not is_default:
+                st.warning("⚠️ 请先在上方上传 'Source B 差旅明细' 样例数据以解锁此区域。")
+            edited_b = UIComponents.render_native_editor(
+                "Source B 配置", 
+                df_b_subset, 
+                is_default or not cols_b, 
+                cols_b, 
+                not cols_b
+            )
+            if not is_default and edited_b is not None: save_and_validate(edited_b)
+            
+            st.divider()
+            
+            # 3. 系统锁定/公式计算区 (只读)
+            st.markdown("#### 🔒 系统锁定/公式计算字段")
+            df_lock_subset = df_t3[~df_t3["源表"].isin(["Source A", "Source B"])]
+            UIComponents.render_native_editor("系统配置 (只读)", df_lock_subset, True, [], True)
         with t2: 
             st.info("ℹ️ 结果表 2 为衍生汇总表，规则由系统锁定。")
             UIComponents.render_native_editor("结算汇总表", df_c[df_c["所属表"]=="结果表2"], True, [], True)
