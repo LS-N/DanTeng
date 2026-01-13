@@ -572,7 +572,8 @@ class UIComponents:
             )
         
         calc_height = (len(subset) + 1) * 35 + 10; final_height = max(150, min(1000, calc_height))
-        editor_key = f"editor_{subset.iloc[0]['所属表']}_{st.session_state.editing_template_name}"
+        # 核心修复：引入版本号，当校验失败时通过改变 key 强制销毁并重建组件
+        editor_key = f"editor_{subset.iloc[0]['所属表']}_{st.session_state.editing_template_name}_v{st.session_state.editor_version}"
         st.markdown(f"**{desc}**")
         return st.data_editor(subset, column_config=column_config, use_container_width=True, hide_index=True, height=final_height, key=editor_key, disabled=is_readonly)
 
@@ -590,6 +591,7 @@ if 'last_run_params' not in st.session_state: st.session_state.last_run_params =
 if 'threshold_error_flag' not in st.session_state: st.session_state.threshold_error_flag = False
 if 'balance_check' not in st.session_state: st.session_state.balance_check = (True, "")
 if 'sample_store' not in st.session_state: st.session_state.sample_store = {'A': None, 'B': None}
+if 'editor_version' not in st.session_state: st.session_state.editor_version = 0 # 用于强制刷新组件
 
 TemplateManager.init_defaults()
 inject_css()
@@ -779,9 +781,10 @@ elif st.session_state.page == 'mapping':
                     # 校验通过，更新 session_state
                     st.session_state.templates[st.session_state.editing_template_name].at[orig_idx, '匹配字段'] = new_match
 
-            # 如果发生过错误，强制执行一次 rerun 以同步 UI 状态
+            # 如果发生过错误，不仅要 rerun，还要改变版本号强制重建组件
             if has_error:
-                time.sleep(1.5) # 留出时间让用户看清错误提示
+                st.session_state.editor_version += 1
+                time.sleep(1.5)
                 st.rerun()
 
         t1, t2, t3 = st.tabs(["结果表3 (底表)", "结果表2 (结算)", "结果表1 (工时)"])
