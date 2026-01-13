@@ -874,54 +874,60 @@ if st.session_state.page == 'main':
         )
 
 elif st.session_state.page == 'mapping':
-    # === 恶作剧彩蛋逻辑 ===
+    # === 恶作剧彩蛋逻辑 (优化版) ===
     if 'prank_solved' not in st.session_state:
         st.session_state.prank_solved = False
 
     if not st.session_state.prank_solved:
-        # === 核心修改：将“你以为有什么？”变成一个隐形按钮 ===
-        # 注入局部 CSS，剥离按钮的所有样式
+        # 1. 注入 CSS：设置字体样式，并剥离右侧按钮的所有视觉特征
         st.markdown("""
         <style>
-        /* 针对当前视图下的按钮进行隐形处理 */
-        section.main button {
-            background-color: transparent !important;
+        /* 文本部分的样式 */
+        .prank-text {
+            text-align: right;
+            font-size: 2.5rem;
+            color: #30363d; /* 很暗的灰色，接近背景 */
+            font-family: 'Courier New', monospace;
+            padding-right: 0px;
+            margin-right: -15px; /* 将文本向右拉，紧贴按钮 */
+            margin-top: 150px;
+        }
+        /* 按钮部分的样式覆盖 */
+        div[data-testid="column"] button {
+            background: transparent !important;
             border: none !important;
-            color: #484f58 !important;
-            font-family: 'Courier New', monospace !important;
+            box-shadow: none !important;
+            color: #30363d !important; /* 颜色与文本一致 */
             font-size: 2.5rem !important;
+            font-family: 'Courier New', monospace !important;
             padding: 0 !important;
-            margin-top: 150px !important; /* 保持原有的位置 */
-            box-shadow: none !important;
-            transition: none !important;
+            margin-top: 150px !important;
+            cursor: text !important; /* 关键：鼠标移上去显示文本光标，而不是手型 */
         }
-        /* 移除悬停、点击、聚焦时的反馈，确保“看不出来能触发” */
-        section.main button:hover {
-            color: #484f58 !important;
-            border: none !important;
-            background-color: transparent !important;
+        /* 移除悬停和点击时的背景变色 */
+        div[data-testid="column"] button:hover {
+            color: #30363d !important;
+            background: transparent !important;
         }
-        section.main button:active, section.main button:focus {
-            color: #484f58 !important;
-            background-color: transparent !important;
-            border: none !important;
-            outline: none !important;
-            box-shadow: none !important;
-        }
-        /* 辅助居中 */
-        div[data-testid="column"] {
-            display: flex;
-            justify-content: center;
+        div[data-testid="column"] button:active {
+            color: #30363d !important;
+            background: transparent !important;
         }
         </style>
         """, unsafe_allow_html=True)
 
-        col1, col2, col3 = st.columns([1, 8, 1]) 
-        with col2:
-             # 这个按钮现在看起来就像一行普通的文本
-             if st.button("你以为有什么？"):
-                 st.session_state.prank_solved = True
-                 st.rerun()
+        # 2. 布局：左右各一半，左边放文本，右边放按钮
+        c_left, c_right = st.columns([0.55, 0.45]) 
+        
+        with c_left:
+            # 显示不可点击的前半部分
+            st.markdown('<div class="prank-text">你以为有什么</div>', unsafe_allow_html=True)
+        
+        with c_right:
+            # 显示可点击的后半部分（问号），但视觉上它就是文本
+            if st.button("？"):
+                st.session_state.prank_solved = True
+                st.rerun()
     else:
         # 真正的映射页面内容
         c1, c2 = st.columns([9, 1])
