@@ -24,81 +24,71 @@ from openpyxl.styles import Border, Side, Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 # ==============================================================================
-# Zone 0: 全局配置 & 样式注入 (已包含 CSS 修复)
+# Zone 0: 全局配置 & 样式注入 (CSS 深度修复版)
 # ==============================================================================
 st.set_page_config(page_title="淡藤财务报表 Pro", page_icon="😈", layout="wide", initial_sidebar_state="expanded")
 
 def inject_css():
     st.markdown("""
     <style>
-        :root { --bg-color: #0d1117; --card-bg: #161b22; --accent: #238636; --text: #c9d1d9; --border-color: #30363d; }
+        :root { --bg-color: #0d1117; --card-bg: #161b22; --text: #c9d1d9; --border-color: #30363d; }
         .stApp { background-color: var(--bg-color); color: var(--text); }
         
-        /* 顶部导航与容器样式 */
-        .nav-header { font-size: 1.2rem; font-weight: bold; display:flex; align-items:center; height: 100%; }
+        /* 强制按钮文字不换行 */
+        button p { white-space: nowrap !important; }
+
+        /* === 文件卡片样式 === */
+        .file-name { font-weight: 600; font-size: 14px; color: #e6edf3; display: block; line-height: 1.2; }
+        .file-stats { font-size: 12px; color: #8b949e; display: block; margin-top: 2px; }
+        .file-icon { font-size: 24px; display: flex; align-items: center; justify-content: center; height: 100%; }
+        
+        /* === 修复 X 按钮不显示的核心 CSS === */
+        /* 1. 确保列内容不被隐藏 */
+        div[data-testid="column"] { overflow: visible !important; }
+
+        /* 2. 针对删除按钮 (secondary) 的强制样式 */
+        div[data-testid="column"] button[kind="secondary"] {
+            border: 1px solid rgba(255,255,255,0.1) !important; /* 微弱边框，确保可见 */
+            background-color: rgba(255,255,255,0.05) !important; /* 微弱背景 */
+            color: #c9d1d9 !important; /* 亮灰色文字 */
+            padding: 0px !important;
+            margin: 0px !important;
+            height: 42px !important; /* 强制高度 */
+            width: 100% !important;  /* 强制撑满 */
+            min-width: 40px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            float: none !important;
+            border-radius: 6px !important;
+            transition: all 0.2s;
+        }
+
+        /* 3. 悬停效果 */
+        div[data-testid="column"] button[kind="secondary"]:hover {
+            color: #ff7b72 !important; /* 红色文字 */
+            border-color: #ff7b72 !important; /* 红色边框 */
+            background-color: rgba(255, 123, 114, 0.1) !important;
+        }
+
+        /* 4. 兼容性修复 */
+        div[data-testid="column"] button[kind="secondary"]:active,
+        div[data-testid="column"] button[kind="secondary"]:focus {
+            box-shadow: none !important;
+            outline: none !important;
+        }
+        
+        /* 顶部信息栏样式 */
         .info-bar { background-color: rgba(56, 139, 253, 0.1); border-left: 4px solid #58a6ff; color: #c9d1d9; padding: 8px 15px; margin-bottom: 20px; font-size: 0.9rem; border-radius: 4px; }
         .error-box { border: 1px solid #ff7b72; background-color: rgba(255, 123, 114, 0.1); padding: 15px; border-radius: 6px; margin-bottom: 15px; }
         .balance-box-ok { border: 1px solid #238636; background-color: rgba(35, 134, 54, 0.1); padding: 10px; border-radius: 6px; margin-bottom: 15px; color: #3fb950; }
         .balance-box-err { border: 1px solid #da3633; background-color: rgba(218, 54, 51, 0.1); padding: 10px; border-radius: 6px; margin-bottom: 15px; color: #f85149; font-weight: bold;}
-        
-        /* 侧边栏按钮样式 */
-        section[data-testid="stSidebar"] .stButton button { width: 100%; border-radius: 4px; font-weight: bold; }
-        
-        /* === 修复: 强制按钮文字不换行 === */
-        button p {
-            white-space: nowrap !important;
-            overflow: hidden;
-            text-overflow: ellipsis;
-        }
 
-        /* === 文件卡片样式 === */
-        .file-name { font-weight: 600; font-size: 15px; color: #e6edf3; display: block; margin-bottom: 2px; line-height: 1.2;}
-        .file-stats { font-size: 12px; color: #8b949e; display: block; }
-        .file-icon { font-size: 24px; display: flex; align-items: center; justify-content: center; height: 100%; }
-        
-        /* === 修复: 定制删除按钮 (X) CSS === */
-        div[data-testid="column"]:has(button[kind="secondary"]) {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-
-        div[data-testid="column"] button[kind="secondary"] {
-            border: none;
-            background: transparent !important;
-            color: #8b949e;
-            font-size: 18px;
-            line-height: 1;
-            padding: 0;
-            margin: 0;
-            width: 100%;
-            height: 100%;
-            min-height: 40px; 
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            float: none !important;
-            transition: color 0.2s, background-color 0.2s;
-        }
-
-        div[data-testid="column"] button[kind="secondary"]:hover {
-            color: #ff7b72; 
-            background-color: rgba(255, 123, 114, 0.1) !important;
-            border-radius: 4px;
-        }
-        
-        div[data-testid="column"] button[kind="secondary"]:active,
-        div[data-testid="column"] button[kind="secondary"]:focus {
-            box-shadow: none !important;
-            border-color: transparent !important;
-            color: #ff7b72;
-        }
-        
     </style>
     """, unsafe_allow_html=True)
 
 # ==============================================================================
-# Zone A: 纯逻辑层
+# Zone A: 纯逻辑层 (包含 T4 校验与空白页修复)
 # ==============================================================================
 class DataEngine:
     @staticmethod
@@ -288,8 +278,7 @@ class DataEngine:
     @staticmethod
     def verify_balance(df_a, df_b, results_dict, config_df):
         """
-        执行全链路数据平衡校验 & 内部勾稽关系校验
-        包括：Input vs Output, 以及 T4(分单) vs T1/T2/T3
+        执行全链路数据平衡校验 & 内部勾稽关系校验 (包含 T4 vs T1/T2/T3)
         """
         messages = []
         is_balanced = True
@@ -318,14 +307,12 @@ class DataEngine:
             messages.append(f"❌ [输入输出] 金额丢失：源表({clean_b_amt:,.2f}) != 明细表({res_amt:,.2f}) (可能原因：B表有SPM未匹配到A表)")
 
         # --- 2. 内部勾稽关系校验 (Simulate Result 4) ---
-        # 模拟生成 Word 所需的聚合数据 (Result 4)
         req_cols = ['合同主体', '人事范围', '销售部门']
         if all(c in df_t3.columns for c in req_cols):
             # T4: 按照分单维度聚合
             df_t4 = df_t3.groupby(req_cols)[['结算费用合计', '支持时间（人天）']].sum().reset_index()
             
             # (A) 校验 T4 vs T2 (部门汇总表)
-            # 逻辑：T2的总金额/总人天 必须等于 T4的总金额/总人天
             t2_sum_amt = df_t2['金额（含税，单位：元）'].sum()
             t4_sum_amt = df_t4['结算费用合计'].sum()
             if abs(t2_sum_amt - t4_sum_amt) > 0.05:
@@ -339,7 +326,6 @@ class DataEngine:
                 messages.append(f"❌ [内部勾稽] 结算汇总表(T2)与分单合集(T4)人天不平")
 
             # (B) 校验 T4 vs T1 (人员工时表)
-            # 逻辑：T1的总工时 必须等于 T4的总人天 * 8
             t1_sum_hrs = df_t1['项目工时'].sum()
             t4_calc_hrs = df_t4['支持时间（人天）'].sum() * 8
             if abs(t1_sum_hrs - t4_calc_hrs) > 0.1:
@@ -347,7 +333,6 @@ class DataEngine:
                 messages.append(f"❌ [内部勾稽] 工时统计表(T1)与分单合集(T4)工时转换不平: {t1_sum_hrs:,.1f} vs {t4_calc_hrs:,.1f}")
 
             # (C) 校验 T4 vs T3 (明细底表)
-            # 逻辑：T3的总金额 必须等于 T4的总金额
             t3_sum_amt = df_t3['结算费用合计'].sum()
             if abs(t3_sum_amt - t4_sum_amt) > 0.05:
                  is_balanced = False
@@ -545,7 +530,7 @@ class WordGenerator:
                     WordGenerator.set_cell_style(new_row.cells[i], text_val)
             
             # ================================================================
-            # 🛠️ 修复空白页的关键代码: 添加零高度段落
+            # 🛠️ 空白页修复：添加零高度段落
             # ================================================================
             last_p = doc.add_paragraph()
             p_fmt = last_p.paragraph_format
@@ -565,7 +550,7 @@ class WordGenerator:
         return output_files, None
 
 # ==============================================================================
-# Zone B: UI 组件层
+# Zone B: UI 组件层 (修正列宽与垂直对齐)
 # ==============================================================================
 class UIComponents:
     @staticmethod
@@ -633,7 +618,8 @@ class UIComponents:
                         st.session_state.last_run_params = None
                         st.rerun()
             else:
-                c_icon, c_info, c_close = st.columns([0.12, 0.78, 0.1], vertical_alignment="center")
+                # 调整列宽：0.15 (15%) 给按钮，防止被隐藏
+                c_icon, c_info, c_close = st.columns([0.15, 0.70, 0.15], vertical_alignment="center")
                 
                 with c_icon:
                     st.markdown('<div class="file-icon">📄</div>', unsafe_allow_html=True)
@@ -799,10 +785,10 @@ if st.session_state.page == 'main':
                     st.session_state.last_run_params = current_params.copy()
                     st.rerun()
                 else:
-                    # 1. 计算 (不传 manager 参数)
+                    # 1. 计算
                     res = DataEngine.calculate(df_a, df_b, st.session_state.mapping_config, current_params['price'], current_params['sub_tag'])
                     
-                    # 2. 总额稽核 & 内部勾稽关系校验 (包含 T4 vs T1/T2/T3)
+                    # 2. 校验
                     st.session_state.balance_check = DataEngine.verify_balance(
                         df_a, df_b, res, st.session_state.mapping_config
                     )
