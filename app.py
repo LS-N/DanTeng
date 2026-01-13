@@ -39,12 +39,10 @@ def inject_css():
         .stApp { background-color: var(--bg-color); color: var(--text); }
         button p { white-space: nowrap !important; }
 
-        /* === 文件卡片样式 === */
         .file-name { font-weight: 600; font-size: 14px; color: #e6edf3; display: block; line-height: 1.2; }
         .file-stats { font-size: 12px; color: #8b949e; display: block; margin-top: 2px; }
         .file-icon { font-size: 24px; display: flex; align-items: center; justify-content: center; height: 100%; }
         
-        /* === 按钮样式 === */
         div[data-testid="column"] { overflow: visible !important; }
         div[data-testid="column"] button[kind="secondary"] {
             border: 1px solid rgba(255,255,255,0.1) !important;
@@ -194,7 +192,6 @@ class DataEngine:
     def validate(df_a, df_b, config_df, min_hours):
         errors = []
         c = lambda t: DataEngine.get_col(config_df, t)
-        
         col_a_user = c('人员'); col_a_spm = c('SPM'); col_a_hrs = c('耗时（小时）')
         col_b_user = c('[配置] B表关联人'); col_b_spm = c('[配置] B表关联SPM'); col_b_amt = c('差旅补助')
         
@@ -566,7 +563,6 @@ class UIComponents:
             column_config["匹配字段"] = st.column_config.TextColumn("匹配字段", disabled=True)
         else:
             column_config["源表"] = st.column_config.TextColumn("源表", disabled=True)
-            # 💡 核心：只有一个大列表，包含 A 和 B 的所有列
             column_config["匹配字段"] = st.column_config.SelectboxColumn("匹配字段", options=all_options, width="medium", required=True)
         
         calc_height = (len(subset) + 1) * 35 + 10; final_height = max(150, min(1000, calc_height))
@@ -727,12 +723,28 @@ elif st.session_state.page == 'mapping':
             current_config = st.session_state.templates[st.session_state.editing_template_name]
             for idx, row in edited_df.iterrows():
                 target = row['目标字段']; source_table = row['源表']; new_match = str(row['匹配字段']).strip()
+                
+                # --- 核心修复：权限隔离门禁 ---
+                # 1. 检查 A 表修改权限
+                if source_table == 'Source A':
+                    if not cols_a: # 没传 A 表
+                        if new_match != str(current_config.loc[current_config['目标字段']==target, '匹配字段'].values[0]): # 试图修改
+                            st.toast(f"⛔ 禁止修改 [{target}]: 请先上传 'Source A 工时统计' 解锁编辑", icon="🔒"); continue
+                    elif new_match not in cols_a: # 传了表但选错了
+                        st.toast(f"❌ [{target}] 无效字段: '{new_match}' 不在 Source A 中", icon="🚫"); continue
+
+                # 2. 检查 B 表修改权限
+                if source_table == 'Source B':
+                    if not cols_b: # 没传 B 表
+                        if new_match != str(current_config.loc[current_config['目标字段']==target, '匹配字段'].values[0]):
+                            st.toast(f"⛔ 禁止修改 [{target}]: 请先上传 'Source B 差旅明细' 解锁编辑", icon="🔒"); continue
+                    elif new_match not in cols_b:
+                        st.toast(f"❌ [{target}] 无效字段: '{new_match}' 不在 Source B 中", icon="🚫"); continue
+
+                # 3. 防空检查
                 if source_table in ['Source A', 'Source B'] and (not new_match or new_match == 'nan' or new_match == 'None'):
-                    st.toast(f"❌ 字段 [{target}] 不能为空，已恢复默认", icon="🚫"); continue 
-                if source_table == 'Source A' and cols_a and new_match not in cols_a:
-                     st.toast(f"❌ [{target}] 不能映射到非 Source A 的字段", icon="🚫"); continue
-                if source_table == 'Source B' and cols_b and new_match not in cols_b:
-                     st.toast(f"❌ [{target}] 不能映射到非 Source B 的字段", icon="🚫"); continue
+                    st.toast(f"❌ 字段 [{target}] 不能为空", icon="🚫"); continue 
+                
                 if '🔒' in source_table: continue 
 
                 mask = (current_config['所属表'] == row['所属表']) & (current_config['目标字段'] == target)
