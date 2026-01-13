@@ -31,8 +31,16 @@ st.set_page_config(page_title="淡藤财务报表 Pro", page_icon="😈", layout
 def inject_css():
     st.markdown("""
     <style>
-        :root { --bg-color: #0d1117; --card-bg: #161b22; --accent: #238636; --text: #c9d1d9; --border-color: #30363d; }
-        .stApp { background-color: var(--bg-color); color: var(--text); }
+        /* === 全局配色与字体 === */
+        :root { 
+            --bg-color: #0d1117; 
+            --card-bg: #161b22; 
+            --card-border: #30363d;
+            --text-primary: #c9d1d9; 
+            --text-secondary: #8b949e;
+            --accent-red: #da3633;
+        }
+        .stApp { background-color: var(--bg-color); color: var(--text-primary); }
         
         /* 顶部导航与容器样式 */
         .nav-header { font-size: 1.2rem; font-weight: bold; display:flex; align-items:center; height: 100%; }
@@ -43,33 +51,92 @@ def inject_css():
         
         /* 侧边栏按钮样式 */
         section[data-testid="stSidebar"] .stButton button { width: 100%; border-radius: 4px; font-weight: bold; }
-        
-        /* === 文件卡片样式 === */
-        
-        /* 定制删除按钮 (X) */
-        div[data-testid="column"] button[kind="secondary"] {
-            border: none;
-            background: transparent;
-            color: #8b949e;
-            font-size: 16px;
-            padding: 0px 5px;
-            line-height: 1;
-            min-height: 0px;
-            float: right;
+
+        /* === 1. 强制垂直居中对齐 (关键!) === */
+        /* 这行代码会让 columns 里面的所有元素垂直居中，不再忽上忽下 */
+        div[data-testid="column"] {
+            display: flex;
+            align-items: center; 
+            height: 100%;
         }
-        div[data-testid="column"] button[kind="secondary"]:hover {
-            color: #ff7b72; /* 悬停变红 */
-            background: rgba(255, 123, 114, 0.1);
-            border: 1px solid #ff7b72;
-        }
+
+        /* === 2. 文件卡片美化 === */
         
-        /* 文件名样式 */
-        .file-name { font-weight: 600; font-size: 15px; color: #e6edf3; display: block; margin-bottom: 2px;}
-        /* 统计数据样式 */
-        .file-stats { font-size: 12px; color: #8b949e; display: block; }
         /* 图标样式 */
-        .file-icon { font-size: 24px; display: flex; align-items: center; justify-content: center; height: 100%; }
+        .file-icon-box {
+            width: 45px;
+            height: 45px;
+            background: rgba(56, 139, 253, 0.15);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 24px;
+            color: #58a6ff;
+        }
+
+        /* 文字排版 */
+        .file-info-box {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            line-height: 1.4;
+            padding-left: 5px;
+        }
+        .file-name { 
+            font-weight: 600; 
+            font-size: 15px; 
+            color: var(--text-primary);
+            white-space: nowrap; 
+            overflow: hidden; 
+            text-overflow: ellipsis; 
+            max-width: 100%;
+        }
+        .file-meta { 
+            font-size: 12px; 
+            color: var(--text-secondary); 
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        .tag-badge {
+            background: rgba(46, 160, 67, 0.15);
+            color: #3fb950;
+            padding: 1px 6px;
+            border-radius: 4px;
+            font-size: 10px;
+            font-weight: bold;
+        }
+
+        /* === 3. 删除按钮终极美化 === */
+        /* 针对 secondary 按钮进行整容，去掉笨重的边框 */
+        button[kind="secondary"] {
+            border: none !important;
+            background: transparent !important;
+            color: #8b949e !important;
+            padding: 0 !important;
+            width: 30px !important;
+            height: 30px !important;
+            min-height: 0px !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
+            border-radius: 50% !important;
+            font-size: 16px !important;
+            box-shadow: none !important;
+            transition: all 0.2s ease;
+        }
+        /* 悬停效果：变成红色圆形背景 */
+        button[kind="secondary"]:hover {
+            background-color: rgba(218, 54, 51, 0.2) !important;
+            color: #ff7b72 !important;
+            transform: scale(1.1);
+        }
+        button[kind="secondary"]:active {
+            transform: scale(0.9);
+        }
         
+        .element-container { margin-bottom: 0.5rem; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -559,14 +626,17 @@ class UIComponents:
     @staticmethod
     def render_file_slot(key, title, data_store):
         """
-        渲染文件上传槽位 (Card Design)
+        渲染文件上传槽位 (Pro UI Version)
         """
         data = data_store[key]
         has_file = data['df'] is not None
         
+        # 使用 border=True 加上边框，模拟卡片
         with st.container(border=True):
             if not has_file:
-                st.markdown(f"**{title}**")
+                # --- 状态：未上传 ---
+                # 用 markdown 渲染小标题，看起来更精致
+                st.markdown(f"**{title}**", help="支持 .xlsx 或 .csv 格式")
                 file = st.file_uploader(title, type=['xlsx', 'csv'], key=f"uploader_{key}", label_visibility="collapsed")
                 
                 if file:
@@ -579,23 +649,33 @@ class UIComponents:
                         st.session_state.last_run_params = None
                         st.rerun()
             else:
-                # 布局：图标(15%) | 信息(75%) | 删除按钮(10%)
-                c_icon, c_info, c_close = st.columns([0.15, 0.75, 0.1])
+                # --- 状态：已上传 (Flex Layout) ---
+                # 比例调整：窄-宽-窄，适应不同屏幕
+                c_icon, c_info, c_action = st.columns([1, 6, 1])
                 
                 with c_icon:
-                    st.markdown('<div class="file-icon">📄</div>', unsafe_allow_html=True)
+                    # 使用 CSS class 渲染一个漂亮的方形图标容器
+                    file_type = "CSV" if data['name'].endswith('.csv') else "XLS"
+                    st.markdown(f'<div class="file-icon-box">{ "📊" if "xlsx" in data["name"] else "📝" }</div>', unsafe_allow_html=True)
                 
                 with c_info:
+                    # 获取数据量并格式化
                     row_count = len(data['df'])
                     row_str = "{:,}".format(row_count)
+                    
+                    # 渲染两行：文件名 + 元数据
                     st.markdown(f"""
-                    <div style="display: flex; flex-direction: column; justify-content: center; height: 100%;">
-                        <span class="file-name">{data['name']}</span>
-                        <span class="file-stats">📊 已加载 {row_str} 条数据</span>
+                    <div class="file-info-box">
+                        <div class="file-name" title="{data['name']}">{data['name']}</div>
+                        <div class="file-meta">
+                            <span class="tag-badge">{file_type}</span>
+                            <span>共 {row_str} 条数据</span>
+                        </div>
                     </div>
                     """, unsafe_allow_html=True)
                 
-                with c_close:
+                with c_action:
+                    # 右侧居中的删除按钮
                     if st.button("✕", key=f"del_{key}", help="移除此文件", type="secondary"): 
                         st.session_state.data_store[key] = {'df': None, 'name': None}
                         st.session_state.is_calculated = False
