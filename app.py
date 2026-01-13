@@ -10,13 +10,11 @@ import re
 # ==============================================================================
 st.set_page_config(page_title="淡藤财务报表 Pro", page_icon="😈", layout="wide", initial_sidebar_state="expanded")
 
-# --- 核心修改：彩蛋回调拦截逻辑 (必须放在最前面) ---
-# 解释：当用户点击伪装的问号链接时，浏览器会刷新并带上参数 ?prank=solved
-# 这里检测到参数后，立刻修改 session_state，并清理 URL，让用户感觉不到发生了跳转
+# --- 彩蛋回调拦截 ---
 if "prank" in st.query_params:
-    st.session_state.page = 'mapping'       # 保持在映射页
-    st.session_state.prank_solved = True    # 标记彩蛋已破解
-    st.query_params.clear()                 # 清理URL参数，深藏功与名
+    st.session_state.page = 'mapping'
+    st.session_state.prank_solved = True
+    st.query_params.clear()
 
 def inject_css():
     st.markdown("""
@@ -24,7 +22,6 @@ def inject_css():
         :root { --bg-color: #0d1117; --card-bg: #161b22; --text: #c9d1d9; --border-color: #30363d; }
         .stApp { background-color: var(--bg-color); color: var(--text); }
         
-        /* 强制按钮文字不换行 */
         button p { white-space: nowrap !important; }
 
         /* === 文件卡片样式 === */
@@ -32,7 +29,7 @@ def inject_css():
         .file-stats { font-size: 12px; color: #8b949e; display: block; margin-top: 2px; }
         .file-icon { font-size: 24px; display: flex; align-items: center; justify-content: center; height: 100%; }
         
-        /* === 修复 X 按钮不显示的核心 CSS === */
+        /* === 修复 X 按钮 CSS === */
         div[data-testid="column"] { overflow: visible !important; }
         div[data-testid="column"] button[kind="secondary"] {
             border: 1px solid rgba(255,255,255,0.1) !important;
@@ -52,7 +49,8 @@ def inject_css():
             box-shadow: none !important; outline: none !important;
         }
         
-        /* 顶部信息栏样式 */
+        /* 顶部信息栏 */
+        .nav-header { font-size: 1.2rem; font-weight: bold; display:flex; align-items:center; height: 100%; }
         .info-bar { background-color: rgba(56, 139, 253, 0.1); border-left: 4px solid #58a6ff; color: #c9d1d9; padding: 8px 15px; margin-bottom: 20px; font-size: 0.9rem; border-radius: 4px; }
         .error-box { border: 1px solid #ff7b72; background-color: rgba(255, 123, 114, 0.1); padding: 15px; border-radius: 6px; margin-bottom: 15px; }
         .balance-box-ok { border: 1px solid #238636; background-color: rgba(35, 134, 54, 0.1); padding: 10px; border-radius: 6px; margin-bottom: 15px; color: #3fb950; }
@@ -62,7 +60,7 @@ def inject_css():
     """, unsafe_allow_html=True)
 
 # ==============================================================================
-# 依赖库检查与导入 (python-docx)
+# 依赖库检查与导入
 # ==============================================================================
 try:
     import docx
@@ -79,7 +77,7 @@ from openpyxl.styles import Border, Side, Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 # ==============================================================================
-# Zone A: 纯逻辑层 (包含 T4 校验、空白页修复、Excel表头插入)
+# Zone A: 纯逻辑层
 # ==============================================================================
 class DataEngine:
     @staticmethod
@@ -336,50 +334,30 @@ class DataEngine:
 
     @staticmethod
     def to_bytes(df, title=None):
-        """
-        导出 DataFrame 到 Excel 字节流
-        :param title: 如果提供，将在第一行插入合并单元格作为标题
-        """
         b = io.BytesIO()
         out = df.drop(columns=['_sys_id'], errors='ignore')
-        
-        # 如果有标题，数据从第二行开始写 (startrow=1 -> Excel Row 2)
         start_row = 1 if title else 0
-        
         with pd.ExcelWriter(b, engine='openpyxl') as writer:
             out.to_excel(writer, index=False, sheet_name='Sheet1', startrow=start_row)
             worksheet = writer.sheets['Sheet1']
-            
             thin = Side(border_style="thin", color="000000")
             border = Border(top=thin, left=thin, right=thin, bottom=thin)
             align_center = Alignment(horizontal='center', vertical='center', wrap_text=False)
             header_font = Font(bold=True)
-            
-            # 计算样式应用范围
             max_r = len(out) + 1 + start_row
             max_c = len(out.columns)
-            
             for row in worksheet.iter_rows(min_row=1, max_row=max_r, min_col=1, max_col=max_c):
                 for cell in row:
                     cell.border = border
                     cell.alignment = align_center
-                    # 原本的 Header 是第1行，如果有标题，Header 变成了第2行 (start_row + 1)
-                    if cell.row == (start_row + 1): 
-                        cell.font = header_font
-            
-            # 插入标题逻辑
+                    if cell.row == (start_row + 1): cell.font = header_font
             if title:
-                # 合并第一行的所有列
                 worksheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max_c)
                 title_cell = worksheet.cell(row=1, column=1)
                 title_cell.value = title
-                # 设置大标题样式
                 title_cell.font = Font(name='SimSun', bold=True, size=18)
                 title_cell.alignment = Alignment(horizontal='center', vertical='center')
-                # 调整标题行高
                 worksheet.row_dimensions[1].height = 30
-
-            # 自动调整列宽
             for i, col in enumerate(out.columns):
                 max_len = 0
                 try: max_len = len(str(col).encode('gbk'))
@@ -391,7 +369,6 @@ class DataEngine:
                     if v_len > max_len: max_len = v_len
                 adjusted_width = min((max_len + 2) * 1.1, 60) 
                 worksheet.column_dimensions[get_column_letter(i + 1)].width = adjusted_width
-                
         return b.getvalue()
 
 class WordGenerator:
@@ -497,82 +474,22 @@ class WordGenerator:
         for i, text in enumerate(headers_1):
             WordGenerator.set_cell_style(table1.rows[0].cells[i], text)
             
-        return doc
+        last_p = doc.add_paragraph()
+        p_fmt = last_p.paragraph_format
+        p_fmt.space_before = Pt(0); p_fmt.space_after = Pt(0)
+        p_fmt.line_spacing = Pt(0); p_fmt.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+        last_p.add_run().font.size = Pt(0)
 
-    @staticmethod
-    def generate(df_result, period_text):
-        if not HAS_DOCX: return {}, "缺少 python-docx 库"
-        if df_result.empty: return {}, "结果数据为空"
-        
-        req_cols = ['合同主体', '人事范围', '销售部门']
-        if not all(c in df_result.columns for c in req_cols): return {}, "缺少必要列"
-
-        pairs = df_result[req_cols].dropna().drop_duplicates().values
-        output_files = {}
-
-        for purchase_comp, sales_comp, dept_name in pairs:
-            df_curr = df_result[
-                (df_result['合同主体'] == purchase_comp) & 
-                (df_result['人事范围'] == sales_comp) &
-                (df_result['销售部门'] == dept_name)
-            ].copy()
-            if df_curr.empty: continue
-
-            doc = WordGenerator.create_hardcoded_template(purchase_comp, sales_comp, dept_name, period_text)
-            table0 = doc.tables[0]
-            
-            total_days = df_curr['支持时间（人天）'].sum()
-            total_labor = df_curr['人力费用'].sum()
-            total_sub = df_curr['差旅补助'].sum()
-            total_fee = df_curr['差旅费控平台'].sum()
-            grand_total = df_curr['结算费用合计'].sum()
-            
-            cells = table0.rows[3].cells
-            vals = [
-                "{:,.1f}".format(total_days), "0.0", "0.0",
-                "{:,.2f}".format(total_labor), "0.00", "0.00",
-                "{:,.2f}".format(total_sub), "{:,.2f}".format(total_fee),
-                "{:,.1f}".format(total_days), "{:,.2f}".format(grand_total)
-            ]
-            for i, v in enumerate(vals): WordGenerator.set_cell_style(cells[i], v)
-
-            table1 = doc.tables[1]
-            cols_map = ['人员', '人事范围', '所属项目', '合同主体', '销售人员', '销售部门', '支持时间（人天）', '人力费用', '差旅补助', '差旅费控平台', '结算费用合计']
-            t1_widths = [0.9, 1.2, 1.5, 1.5, 1.0, 1.0, 1.0, 2.2, 2.3, 2.3, 2.6]
-            
-            for _, row in df_curr.iterrows():
-                new_row = table1.add_row()
-                WordGenerator.set_row_height(new_row, 1.0) 
-                for idx, width in enumerate(t1_widths): new_row.cells[idx].width = Cm(width)
-                for i, col_name in enumerate(cols_map):
-                    val = row.get(col_name, '')
-                    if isinstance(val, (int, float)):
-                        text_val = "{:,.1f}".format(val) if '人天' in col_name else "{:,.2f}".format(val)
-                    else: text_val = str(val)
-                    WordGenerator.set_cell_style(new_row.cells[i], text_val)
-            
-            # ================================================================
-            # 🛠️ 空白页修复：添加零高度段落
-            # ================================================================
-            last_p = doc.add_paragraph()
-            p_fmt = last_p.paragraph_format
-            p_fmt.space_before = Pt(0)
-            p_fmt.space_after = Pt(0)
-            p_fmt.line_spacing = Pt(0)
-            p_fmt.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-            last_p.add_run().font.size = Pt(0)
-            # ================================================================
-
-            out = io.BytesIO()
-            doc.save(out)
-            safe_dept = str(dept_name).replace('/', '_').replace('\\', '_')
-            fname = f"结算单_{purchase_comp}_{sales_comp}_{safe_dept}.docx"
-            output_files[fname] = out.getvalue()
+        out = io.BytesIO()
+        doc.save(out)
+        safe_dept = str(dept_name).replace('/', '_').replace('\\', '_')
+        fname = f"结算单_{purchase_comp}_{sales_comp}_{safe_dept}.docx"
+        output_files[fname] = out.getvalue()
 
         return output_files, None
 
 # ==============================================================================
-# Zone B: UI 组件层 (修正列宽与垂直对齐)
+# Zone B: UI 组件层
 # ==============================================================================
 class UIComponents:
     @staticmethod
@@ -605,7 +522,6 @@ class UIComponents:
             st.markdown("---")
             if st.button("🐱 字段映射 & 逻辑"):
                 st.session_state.page = 'mapping'
-                # 重置恶作剧状态，确保每次点击都触发
                 st.session_state.prank_solved = False
                 st.rerun()
                 
@@ -642,22 +558,16 @@ class UIComponents:
                         st.session_state.last_run_params = None
                         st.rerun()
             else:
-                # 调整列宽：0.15 (15%) 给按钮，防止被隐藏
                 c_icon, c_info, c_close = st.columns([0.15, 0.70, 0.15], vertical_alignment="center")
-                
-                with c_icon:
-                    st.markdown('<div class="file-icon">📄</div>', unsafe_allow_html=True)
-                
+                with c_icon: st.markdown('<div class="file-icon">📄</div>', unsafe_allow_html=True)
                 with c_info:
-                    row_count = len(data['df'])
-                    row_str = "{:,}".format(row_count)
+                    row_str = "{:,}".format(len(data['df']))
                     st.markdown(f"""
                     <div style="display: flex; flex-direction: column; justify-content: center; height: 100%;">
                         <span class="file-name">{data['name']}</span>
                         <span class="file-stats">📊 已加载 {row_str} 条数据</span>
                     </div>
                     """, unsafe_allow_html=True)
-                
                 with c_close:
                     if st.button("✕", key=f"del_{key}", help="移除此文件", type="secondary"): 
                         st.session_state.data_store[key] = {'df': None, 'name': None}
@@ -679,12 +589,9 @@ class UIComponents:
     @staticmethod
     def render_download_zone(result_files, all_in_one_zip, word_files_dict, period_str, balance_check):
         is_bal, bal_msg = balance_check
-        
         css_class = "balance-box-ok" if is_bal else "balance-box-err"
         st.markdown(f"<div class='{css_class}'>{bal_msg}</div>", unsafe_allow_html=True)
-        
-        if not is_bal:
-            st.warning("⚠️ 严重警告：总额或内部勾稽不平，请务必检查上方错误信息！")
+        if not is_bal: st.warning("⚠️ 严重警告：总额或内部勾稽不平，请务必检查上方错误信息！")
 
         with st.container(border=True):
             st.success("✅ 计算完成 | 报表已生成")
@@ -809,22 +716,15 @@ if st.session_state.page == 'main':
                     st.session_state.last_run_params = current_params.copy()
                     st.rerun()
                 else:
-                    # 1. 计算
                     res = DataEngine.calculate(df_a, df_b, st.session_state.mapping_config, current_params['price'], current_params['sub_tag'])
+                    st.session_state.balance_check = DataEngine.verify_balance(df_a, df_b, res, st.session_state.mapping_config)
                     
-                    # 2. 校验
-                    st.session_state.balance_check = DataEngine.verify_balance(
-                        df_a, df_b, res, st.session_state.mapping_config
-                    )
-                    
-                    # 3. 结果生成 (修复点：为 T2 生成动态标题)
                     q_str = DataEngine.get_quarter_str(current_params['period'])
-                    # 提取年份后两位和季度 (例如 2025Q4 -> 25Q4)
                     t2_title = f"{q_str[2:]}实施交付部项目投入考核调整总表"
                     
                     excel_files_dict = {
                         "t1": DataEngine.to_bytes(res['t1']),
-                        "t2": DataEngine.to_bytes(res['t2'], title=t2_title), # 传入动态标题
+                        "t2": DataEngine.to_bytes(res['t2'], title=t2_title),
                         "t3": DataEngine.to_bytes(res['t3'])
                     }
                     st.session_state.result_files = excel_files_dict
@@ -833,7 +733,6 @@ if st.session_state.page == 'main':
                     st.session_state.word_files = word_files_dict
                     
                     all_files_to_zip = {}
-                    
                     all_files_to_zip[f"实施交付部项目情况汇总_部门工时统计-{q_str}.xlsx"] = excel_files_dict['t1']
                     all_files_to_zip[f"{q_str}实施交付部项目投入考核调整总表.xlsx"] = excel_files_dict['t2']
                     all_files_to_zip[f"实施交付部项目情况汇总_结算工时总表-{q_str}.xlsx"] = excel_files_dict['t3']
@@ -865,50 +764,32 @@ if st.session_state.page == 'main':
         )
 
 elif st.session_state.page == 'mapping':
-    # === 恶作剧彩蛋逻辑 (隐形链接版) ===
     if 'prank_solved' not in st.session_state:
         st.session_state.prank_solved = False
 
     if not st.session_state.prank_solved:
-        # 1. 注入 CSS：强制修改伪装链接的鼠标样式，使其看起来像普通文本光标
+        # === 逃生通道：返回按钮 ===
+        c1, c2 = st.columns([9, 1])
+        c1.write("")
+        if c2.button("⬅️", key="back_from_prank", use_container_width=True):
+            st.session_state.page = 'main'
+            st.rerun()
+
+        # === 核心彩蛋逻辑 (隐形链接版) ===
         st.markdown("""
         <style>
-        .prank-container {
-            display: flex;
-            justify-content: center;
-            margin-top: 150px;
-        }
-        .prank-text {
-            font-size: 2.5rem;
-            color: #30363d; /* 深灰色，像背景 */
-            font-family: 'Courier New', monospace;
-            cursor: default; /* 默认箭头光标 */
-        }
-        /* 核心伪装：链接看起来和普通文字一模一样，连光标也是 text */
-        a.prank-link {
-            text-decoration: none;
-            color: inherit;
-            cursor: text; /* 关键：鼠标移上去变成文本输入状，用户绝对想不到是链接 */
-        }
-        a.prank-link:hover {
-            color: inherit;
-            text-decoration: none;
-        }
+        .prank-container { display: flex; justify-content: center; margin-top: 150px; }
+        .prank-text { font-size: 2.5rem; color: #30363d; font-family: 'Courier New', monospace; cursor: default; }
+        a.prank-link { text-decoration: none; color: inherit; cursor: text; }
+        a.prank-link:hover { color: inherit; text-decoration: none; }
         </style>
-        """, unsafe_allow_html=True)
-
-        # 2. 渲染伪装的 HTML
-        # 这里的问号被包裹在 <a> 标签里，点击会刷新页面并带上参数 ?prank=1
-        st.markdown("""
         <div class="prank-container">
             <span class="prank-text">
                 你以为有什么<a href="?prank=1" target="_self" class="prank-link">？</a>
             </span>
         </div>
         """, unsafe_allow_html=True)
-        
     else:
-        # 真正的映射页面内容
         c1, c2 = st.columns([9, 1])
         c1.markdown("<div class='nav-header'>🐱 字段映射 & 逻辑配置</div>", unsafe_allow_html=True)
         if c2.button("⬅️", use_container_width=True): 
