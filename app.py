@@ -138,8 +138,7 @@ class DataEngine:
 
     @staticmethod
     def get_default_config():
-        # 增加一个隐藏的 'IsLocked' 列，用于后续判断是否允许修改
-        df = pd.DataFrame([
+        return pd.DataFrame([
             {"所属表": "结果表3", "序号": 1, "目标字段": "序号", "源表": "🔒 系统生成", "匹配字段": "-", "逻辑说明": "自增序列"},
             {"所属表": "结果表3", "序号": 2, "目标字段": "人员", "源表": "Source A", "匹配字段": "人员", "逻辑说明": "主键 (Join Key)"},
             {"所属表": "结果表3", "序号": 3, "目标字段": "所属项目", "源表": "Source A", "匹配字段": "项目", "逻辑说明": "维度 (First)"},
@@ -167,7 +166,6 @@ class DataEngine:
             {"所属表": "结果表1", "序号": 2, "目标字段": "人员", "源表": "🔒 结果表3", "匹配字段": "人员", "逻辑说明": "维度分组"},
             {"所属表": "结果表1", "序号": 3, "目标字段": "项目工时", "源表": "🔒 结果表3", "匹配字段": "耗时（小时）", "逻辑说明": "SUM聚合"},
         ])
-        return df
 
     @staticmethod
     def get_col(config_df, target):
@@ -186,16 +184,17 @@ class DataEngine:
         is_ok = True; msg = ""
         if slot_type == 'A':
             if not any(k in cols for k in ['工', '时']) and any(k in cols for k in ['金', '额', '税']):
-                is_ok = False; msg = "⚠️ 警告：您似乎在 [Source A (工时)] 槽位上传了 [费用表]？"
+                is_ok = False; msg = "⚠️ 警告：您似乎在 [Source A 工时] 槽位上传了 [费用表]？"
         elif slot_type == 'B':
             if not any(k in cols for k in ['金', '额', '费']) and any(k in cols for k in ['工', '时']):
-                is_ok = False; msg = "⚠️ 警告：您似乎在 [Source B (费用)] 槽位上传了 [工时表]？"
+                is_ok = False; msg = "⚠️ 警告：您似乎在 [Source B 差旅] 槽位上传了 [工时表]？"
         return is_ok, msg
 
     @staticmethod
     def validate(df_a, df_b, config_df, min_hours):
         errors = []
         c = lambda t: DataEngine.get_col(config_df, t)
+        
         col_a_user = c('人员'); col_a_spm = c('SPM'); col_a_hrs = c('耗时（小时）')
         col_b_user = c('[配置] B表关联人'); col_b_spm = c('[配置] B表关联SPM'); col_b_amt = c('差旅补助')
         
@@ -464,9 +463,7 @@ class UIComponents:
 
             st.markdown("<div class='sidebar-label'>⚡ 当前生效计算模板</div>", unsafe_allow_html=True)
             all_templates = TemplateManager.get_all_names()
-            if st.session_state.active_template_name not in all_templates:
-                st.session_state.active_template_name = TemplateManager.DEFAULT_NAME
-            
+            if st.session_state.active_template_name not in all_templates: st.session_state.active_template_name = TemplateManager.DEFAULT_NAME
             selected_active = st.selectbox("Active", options=all_templates, index=all_templates.index(st.session_state.active_template_name), key="sidebar_active_selector", label_visibility="collapsed")
             if selected_active != st.session_state.active_template_name:
                 st.session_state.active_template_name = selected_active; st.session_state.is_calculated = False; st.rerun()
@@ -569,7 +566,7 @@ class UIComponents:
             column_config["匹配字段"] = st.column_config.TextColumn("匹配字段", disabled=True)
         else:
             column_config["源表"] = st.column_config.TextColumn("源表", disabled=True)
-            # 💡 核心改变：只有一个大列表，包含 A 和 B 的所有列
+            # 💡 核心：只有一个大列表，包含 A 和 B 的所有列
             column_config["匹配字段"] = st.column_config.SelectboxColumn("匹配字段", options=all_options, width="medium", required=True)
         
         calc_height = (len(subset) + 1) * 35 + 10; final_height = max(150, min(1000, calc_height))
@@ -669,37 +666,29 @@ elif st.session_state.page == 'mapping':
         if c2.button("⬅️", key="back_from_prank", type="tertiary", use_container_width=True): st.session_state.page = 'main'; st.rerun()
         st.markdown("""<style>.prank-container { display: flex; justify-content: center; margin-top: 150px; } .prank-text { font-size: 2.5rem; color: #30363d; font-family: 'Courier New', monospace; cursor: default; } a.prank-link { text-decoration: none; color: inherit; cursor: text; } a.prank-link:hover { color: inherit; text-decoration: none; }</style><div class="prank-container"><span class="prank-text">你以为有什么<a href="?prank=1" target="_self" class="prank-link">？</a></span></div>""", unsafe_allow_html=True)
     else:
-        # === 规则配置中心 ===
         with st.sidebar:
             st.header("📏 规则模板管理")
-            # 1. 生效选择
             st.markdown("<div class='sidebar-label'>⚡ 当前生效计算模板</div>", unsafe_allow_html=True)
             all_templates = TemplateManager.get_all_names()
             if st.session_state.active_template_name not in all_templates: st.session_state.active_template_name = TemplateManager.DEFAULT_NAME
             selected_active = st.selectbox("Active", options=all_templates, index=all_templates.index(st.session_state.active_template_name), key="mapping_sidebar_active", label_visibility="collapsed")
             if selected_active != st.session_state.active_template_name: st.session_state.active_template_name = selected_active
             st.divider()
-            # 2. 编辑列表
             st.markdown("<div class='sidebar-label'>📝 模板列表 (点击编辑)</div>", unsafe_allow_html=True)
             for tpl_name in all_templates:
                 btn_type = "primary" if tpl_name == st.session_state.editing_template_name else "secondary"
                 if st.button(tpl_name, key=f"btn_edit_{tpl_name}", type=btn_type, use_container_width=True):
-                    st.session_state.editing_template_name = tpl_name
-                    st.session_state.sample_store = {'A': None, 'B': None} # 切换清空
-                    st.rerun()
+                    st.session_state.editing_template_name = tpl_name; st.session_state.sample_store = {'A': None, 'B': None}; st.rerun()
             st.divider()
-            # 3. 新建
             with st.popover("➕ 新建模板", use_container_width=True):
                 new_tpl_name = st.text_input("模板名称", placeholder="例如: 2025新规则")
                 if st.button("创建", use_container_width=True):
                     if new_tpl_name and new_tpl_name not in st.session_state.templates:
                         TemplateManager.save_template(new_tpl_name, DataEngine.get_default_config().copy())
-                        st.session_state.editing_template_name = new_tpl_name
-                        st.session_state.sample_store = {'A': None, 'B': None}
+                        st.session_state.editing_template_name = new_tpl_name; st.session_state.sample_store = {'A': None, 'B': None}
                         st.success(f"模板 {new_tpl_name} 已创建"); time.sleep(0.5); st.rerun()
                     elif new_tpl_name: st.error("名称已存在")
 
-        # 主界面
         c1, c2 = st.columns([8, 2], vertical_alignment="center")
         c1.markdown(f"<div class='nav-header'>📏 正在编辑: {st.session_state.editing_template_name}</div>", unsafe_allow_html=True)
         if c2.button("⬅️ 返回主页", type="tertiary", use_container_width=True): st.session_state.page = 'main'; st.rerun()
@@ -712,14 +701,14 @@ elif st.session_state.page == 'mapping':
             with st.expander("📂 上传样例数据 (用于提取列名，不参与计算)", expanded=True):
                 st.caption("提示：此处上传的文件仅用于获取表头。")
                 sc1, sc2 = st.columns(2)
-                sample_a = sc1.file_uploader("Source A 样张", type=['xlsx', 'csv'], key="sample_a")
+                sample_a = sc1.file_uploader("Source A 工时统计", type=['xlsx', 'csv'], key="sample_a")
                 if sample_a: 
                     df = UIComponents.load_data_cached(sample_a, sample_a.name)
                     if df is not None: 
                         is_ok, msg = DataEngine.smart_slot_check(df, 'A')
                         if not is_ok: st.toast(msg, icon="⚠️")
                         st.session_state.sample_store['A'] = list(df.columns)
-                sample_b = sc2.file_uploader("Source B 样张", type=['xlsx', 'csv'], key="sample_b")
+                sample_b = sc2.file_uploader("Source B 差旅明细", type=['xlsx', 'csv'], key="sample_b")
                 if sample_b:
                     df = UIComponents.load_data_cached(sample_b, sample_b.name)
                     if df is not None: 
@@ -733,48 +722,25 @@ elif st.session_state.page == 'mapping':
 
         df_c = st.session_state.templates[st.session_state.editing_template_name]
         
-        # 统一的保存与校验逻辑
         def save_and_validate(edited_df):
             if is_default: return
-            
-            # 1. 读取当前原始配置
             current_config = st.session_state.templates[st.session_state.editing_template_name]
-            
-            # 2. 遍历修改后的行
             for idx, row in edited_df.iterrows():
-                # 定位原始行
-                target = row['目标字段']
-                source_table = row['源表']
-                new_match = str(row['匹配字段']).strip()
-                
-                # 校验 A: 防空 (如果是 A/B 表的映射，不能为空)
+                target = row['目标字段']; source_table = row['源表']; new_match = str(row['匹配字段']).strip()
                 if source_table in ['Source A', 'Source B'] and (not new_match or new_match == 'nan' or new_match == 'None'):
-                    st.toast(f"❌ 字段 [{target}] 不能为空，已恢复默认", icon="🚫")
-                    continue # 跳过更新，相当于回滚
-                
-                # 校验 B: 防跨源 (Source A 的行不能选 Source B 的列)
-                # 逻辑：如果上传了 A 表，new_match 必须在 cols_a 中。没传 A 表则不强校验(或者强校验默认值)
+                    st.toast(f"❌ 字段 [{target}] 不能为空，已恢复默认", icon="🚫"); continue 
                 if source_table == 'Source A' and cols_a and new_match not in cols_a:
-                     st.toast(f"❌ [{target}] 不能映射到非 Source A 的字段", icon="🚫")
-                     continue
+                     st.toast(f"❌ [{target}] 不能映射到非 Source A 的字段", icon="🚫"); continue
                 if source_table == 'Source B' and cols_b and new_match not in cols_b:
-                     st.toast(f"❌ [{target}] 不能映射到非 Source B 的字段", icon="🚫")
-                     continue
-                
-                # 校验 C: 防篡改 (锁定行)
-                if '🔒' in source_table:
-                    continue # 锁定行忽略任何修改
+                     st.toast(f"❌ [{target}] 不能映射到非 Source B 的字段", icon="🚫"); continue
+                if '🔒' in source_table: continue 
 
-                # 通过校验，更新内存
-                # 定位 index
                 mask = (current_config['所属表'] == row['所属表']) & (current_config['目标字段'] == target)
                 if mask.any():
                     orig_idx = current_config[mask].index[0]
                     st.session_state.templates[st.session_state.editing_template_name].at[orig_idx, '匹配字段'] = new_match
 
         t1, t2, t3 = st.tabs(["结果表3 (底表)", "结果表2 (结算)", "结果表1 (工时)"])
-        
-        # 💡 核心：合并选项列表。用户可以看到所有列，但在保存时会被校验逻辑拦截。
         merged_options = cols_a + cols_b
         
         with t1: 
@@ -795,6 +761,5 @@ elif st.session_state.page == 'mapping':
                     if TemplateManager.delete_template(st.session_state.editing_template_name):
                         st.success("模板已删除"); time.sleep(0.5); st.rerun()
             with bc3:
-                # 这里的保存按钮主要是心理作用，DataEditor其实已经触发了 save_and_validate
                 if st.button("💾 确认生效", type="primary", use_container_width=True):
                     st.toast(f"模板 [{st.session_state.editing_template_name}] 已更新并校验通过", icon="✅")
