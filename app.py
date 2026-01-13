@@ -551,31 +551,32 @@ class UIComponents:
                         c_b.download_button("下载", fbytes, fname, key=f"btn_{fname}")
 
     @staticmethod
-    def render_native_editor(desc, subset, is_readonly, all_options, disable_match_field_column=False):
+    def render_native_editor(desc, subset, is_readonly, all_options):
+        """
+        渲染精简版编辑器。由于采用了物理隔离方案，
+        下拉选项在传入前已过滤，无需在组件内部进行复杂的动态禁用。
+        """
         if subset.empty: return None
+        
         column_config = {
             "序号": st.column_config.TextColumn("序号", width="small", disabled=True),
             "目标字段": st.column_config.TextColumn("目标字段", disabled=True, width="medium"),
+            "源表": st.column_config.TextColumn("源表", disabled=True),
             "逻辑说明": st.column_config.TextColumn("逻辑说明", disabled=True, width="large"),
         }
+        
         if is_readonly:
-            column_config["源表"] = st.column_config.TextColumn("源表", disabled=True)
             column_config["匹配字段"] = st.column_config.TextColumn("匹配字段", disabled=True)
         else:
-            column_config["源表"] = st.column_config.TextColumn("源表", disabled=True)
             column_config["匹配字段"] = st.column_config.SelectboxColumn(
-                "匹配字段",
-                options=all_options,
-                width="medium",
-                required=True,
-                disabled=disable_match_field_column
+                "匹配字段", options=all_options, width="medium", required=True
             )
         
-        calc_height = (len(subset) + 1) * 35 + 10; final_height = max(150, min(1000, calc_height))
-        # 核心修复：引入 desc 和版本号，确保 key 的唯一性，防止拆分编辑器后出现 Duplicate Key 报错
-        editor_key = f"editor_{desc}_{subset.iloc[0]['所属表']}_{st.session_state.editing_template_name}_v{st.session_state.editor_version}"
+        calc_height = (len(subset) + 1) * 35 + 10
+        # 使用 desc 确保 key 唯一，防止 Duplicate Key 报错
+        editor_key = f"editor_{desc}_{subset.iloc[0]['所属表']}_{st.session_state.editing_template_name}"
         st.markdown(f"**{desc}**")
-        return st.data_editor(subset, column_config=column_config, use_container_width=True, hide_index=True, height=final_height, key=editor_key, disabled=is_readonly)
+        return st.data_editor(subset, column_config=column_config, use_container_width=True, hide_index=True, height=max(150, min(1000, calc_height)), key=editor_key, disabled=is_readonly)
 
 # ==============================================================================
 # Zone C: 控制层
@@ -591,7 +592,7 @@ if 'last_run_params' not in st.session_state: st.session_state.last_run_params =
 if 'threshold_error_flag' not in st.session_state: st.session_state.threshold_error_flag = False
 if 'balance_check' not in st.session_state: st.session_state.balance_check = (True, "")
 if 'sample_store' not in st.session_state: st.session_state.sample_store = {'A': None, 'B': None}
-if 'editor_version' not in st.session_state: st.session_state.editor_version = 0 # 用于强制刷新组件
+# if 'editor_version' not in st.session_state: st.session_state.editor_version = 0 # 物理隔离后不再需要强制刷新版本号
 
 TemplateManager.init_defaults()
 inject_css()
@@ -727,65 +728,23 @@ elif st.session_state.page == 'mapping':
         df_c = st.session_state.templates[st.session_state.editing_template_name]
         
         def save_and_validate(edited_df):
+            """
+            精简版保存逻辑。由于 UI 已实现物理隔离，
+            此处仅保留核心的 session_state 更新逻辑。
+            """
             if is_default: return
             current_config = st.session_state.templates[st.session_state.editing_template_name]
-            has_error = False
             
             for idx, row in edited_df.iterrows():
                 target = row['目标字段']
-                source_table = row['源表']
                 new_match = str(row['匹配字段']).strip()
                 
                 mask = (current_config['所属表'] == row['所属表']) & (current_config['目标字段'] == target)
                 if not mask.any(): continue
                 
                 orig_idx = current_config[mask].index[0]
-                old_match = str(current_config.at[orig_idx, '匹配字段']).strip()
-                
-                if new_match == old_match: continue
-
-                # --- 核心门禁逻辑 ---
-                error_msg = None
-                
-                # 门禁一：未上传拦截
-                if source_table == 'Source A' and not cols_a:
-                    error_msg = f"⛔ 驳回修改 [{target}]: 请先上传 'Source A 工时统计' 数据源。"
-                elif source_table == 'Source B' and not cols_b:
-                    error_msg = f"⛔ 驳回修改 [{target}]: 请先上传 'Source B 差旅明细' 数据源。"
-                
-                # 门禁二：选错表拦截（物理隔离核心）
-                elif source_table == 'Source A':
-                    if cols_a and new_match not in cols_a:
-                        error_msg = f"⚠️ 字段无效: '{new_match}' 不属于 Source A，请重新选择。"
-                    elif not cols_a:
-                        error_msg = f"⛔ 权限锁定: 请先上传 Source A 数据源。"
-                
-                elif source_table == 'Source B':
-                    if cols_b and new_match not in cols_b:
-                        error_msg = f"⚠️ 字段无效: '{new_match}' 不属于 Source B，请重新选择。"
-                    elif not cols_b:
-                        error_msg = f"⛔ 权限锁定: 请先上传 Source B 数据源。"
-                
-                # 其他安全检查
-                elif '🔒' in source_table:
-                    error_msg = f"🔒 系统锁定字段 [{target}] 不可修改。"
-                elif not new_match or new_match in ['nan', 'None', '-']:
-                    error_msg = f"❌ 字段 [{target}] 不能为空。"
-
-                if error_msg:
-                    st.error(error_msg)
-                    has_error = True
-                    # 显式重置该单元格为旧值，防止 UI 状态残留
-                    edited_df.at[idx, '匹配字段'] = old_match
-                else:
-                    # 校验通过，更新 session_state
+                if new_match != str(current_config.at[orig_idx, '匹配字段']).strip():
                     st.session_state.templates[st.session_state.editing_template_name].at[orig_idx, '匹配字段'] = new_match
-
-            # 如果发生过错误，不仅要 rerun，还要改变版本号强制重建组件
-            if has_error:
-                st.session_state.editor_version += 1
-                time.sleep(1.5)
-                st.rerun()
 
         t1, t2, t3 = st.tabs(["结果表3 (底表)", "结果表2 (结算)", "结果表1 (工时)"])
         
@@ -809,11 +768,7 @@ elif st.session_state.page == 'mapping':
             if not cols_a and not is_default:
                 st.warning("⚠️ 请先在上方上传 'Source A 工时统计' 样例数据以解锁此区域。")
             edited_a = UIComponents.render_native_editor(
-                "Source A 配置", 
-                df_a_subset, 
-                is_default or not cols_a, 
-                cols_a, 
-                not cols_a
+                "Source A 配置", df_a_subset, is_default or not cols_a, cols_a
             )
             if not is_default and edited_a is not None: save_and_validate(edited_a)
             
@@ -825,11 +780,7 @@ elif st.session_state.page == 'mapping':
             if not cols_b and not is_default:
                 st.warning("⚠️ 请先在上方上传 'Source B 差旅明细' 样例数据以解锁此区域。")
             edited_b = UIComponents.render_native_editor(
-                "Source B 配置", 
-                df_b_subset, 
-                is_default or not cols_b, 
-                cols_b, 
-                not cols_b
+                "Source B 配置", df_b_subset, is_default or not cols_b, cols_b
             )
             if not is_default and edited_b is not None: save_and_validate(edited_b)
             
@@ -838,7 +789,7 @@ elif st.session_state.page == 'mapping':
             # 3. 系统锁定/公式计算区 (只读)
             st.markdown("#### 🔒 系统锁定/公式计算字段")
             df_lock_subset = df_t3[~df_t3["源表"].isin(["Source A", "Source B"])]
-            UIComponents.render_native_editor("系统配置 (只读)", df_lock_subset, True, [], True)
+            UIComponents.render_native_editor("系统配置 (只读)", df_lock_subset, True, [])
         with t2: 
             st.info("ℹ️ 结果表 2 为衍生汇总表，规则由系统锁定。")
             UIComponents.render_native_editor("结算汇总表", df_c[df_c["所属表"]=="结果表2"], True, [], True)
