@@ -36,11 +36,10 @@ def inject_css():
         .nav-header { font-size: 1.2rem; font-weight: bold; display:flex; align-items:center; height: 100%; }
         .info-bar { background-color: rgba(56, 139, 253, 0.1); border-left: 4px solid #58a6ff; color: #c9d1d9; padding: 8px 15px; margin-bottom: 20px; font-size: 0.9rem; border-radius: 4px; }
         .error-box { border: 1px solid #ff7b72; background-color: rgba(255, 123, 114, 0.1); padding: 15px; border-radius: 6px; margin-bottom: 15px; }
+        .balance-box-ok { border: 1px solid #238636; background-color: rgba(35, 134, 54, 0.1); padding: 10px; border-radius: 6px; margin-bottom: 15px; color: #3fb950; }
+        .balance-box-err { border: 1px solid #da3633; background-color: rgba(218, 54, 51, 0.1); padding: 10px; border-radius: 6px; margin-bottom: 15px; color: #f85149; font-weight: bold;}
         
         section[data-testid="stSidebar"] .stButton button { width: 100%; border-radius: 4px; font-weight: bold; }
-        section[data-testid="stSidebar"] div[data-testid="stAlert"] { padding: 0px 10px; height: 46px; display: flex; align-items: center; justify-content: center; }
-        section[data-testid="stSidebar"] div[data-testid="stAlert"] > div { display: flex; align-items: center; justify-content: center; width: 100%; }
-        section[data-testid="stSidebar"] div[data-testid="stAlert"] p { font-size: 14px; margin: 0; line-height: 1; padding-left: 5px; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -112,11 +111,7 @@ class DataEngine:
     @staticmethod
     def validate(df_a, df_b, config_df, min_hours):
         """
-        核心校验逻辑：
-        1. 基础：关键列是否存在
-        2. 业务：B表有差旅的人，A表必须有工时（防止幽灵差旅）
-        3. 数据：工时不能为负
-        4. 规则：工时阈值警告
+        核心校验逻辑
         """
         errors = []
         c = lambda t: DataEngine.get_col(config_df, t)
@@ -139,21 +134,17 @@ class DataEngine:
         valid_b = check(df_b, col_b_user, 'Source B', '出差人') and check(df_b, col_b_spm, 'Source B', 'SPM') and check(df_b, col_b_amt, 'Source B', '金额')
         if not (valid_a and valid_b): return errors, df_a, df_b
 
-        # 2. 【核心新增】反向校验：B表有差旅的人，A表必须有记录
+        # 2. 【核心】反向校验：B表有差旅的人，A表必须有记录
         if col_b_user in df_b.columns and col_a_user in df_a.columns:
-            # A表人员集合
             users_in_a = set(df_a[col_a_user].astype(str).str.strip())
-            
-            # B表处理后人员集合 (去除 _云计算 后缀)
+            # B表去后缀
             b_clean_series = df_b[col_b_user].astype(str).str.replace('_云计算', '', regex=False).str.strip()
             users_in_b = set(b_clean_series)
             
-            # 计算差集 (B中存在但A中不存在)
             ghost_users = users_in_b - users_in_a
             
             if ghost_users:
                 for u in ghost_users:
-                    # 找到B表中的示例行号
                     example_rows = df_b[b_clean_series == u]
                     for idx, row in example_rows.iterrows():
                         sys_id = row.get('_sys_id', idx+1)
@@ -195,51 +186,51 @@ class DataEngine:
         col_b_amt = c('差旅补助')
         col_b_type = c('[配置] B表类型列')
 
-        # 清洗数据
+        # 清洗
         df_a[col_a_hrs] = DataEngine.clean_num(df_a, col_a_hrs)
         df_b[col_b_amt] = DataEngine.clean_num(df_b, col_b_amt)
+        # 假设源表金额已经是元，如果以前是万元需在此处 * 10000
         df_b[col_b_amt] = df_b[col_b_amt].round(2)
 
         if col_b_user and col_b_user in df_b.columns:
             df_b[col_b_user] = df_b[col_b_user].astype(str).str.replace('_云计算', '', regex=False).str.strip()
 
-        # 聚合 A 表 (按 人+SPM)
+        # 聚合 A 表
         agg_rules = {col_a_hrs: 'sum'}
         for _, col in dims_a.items():
             if col: agg_rules[col] = 'first'
         df_a_gp = df_a.groupby([col_a_user, col_a_spm], as_index=False).agg(agg_rules)
 
-        # 处理 B 表 (拆分 补助 vs 费控)
+        # 聚合 B 表
         is_sub = df_b[col_b_type].astype(str).str.contains(subsidy_tag, na=False)
         grp_b = [col_b_user, col_b_spm]
         df_sub = df_b[is_sub].groupby(grp_b)[col_b_amt].sum().reset_index(name='差旅补助')
         df_fee = df_b[~is_sub].groupby(grp_b)[col_b_amt].sum().reset_index(name='差旅费控平台')
 
-        # 统一关联键格式
         for d in [df_a_gp, df_sub, df_fee]:
             k = col_a_spm if col_a_spm in d.columns else col_b_spm
-            d[k] = d[k].astype(str)
+            d[k] = d[k].astype(str).str.strip()
 
-        # Left Join: A为主表
+        # Left Join
         res = pd.merge(df_a_gp, df_sub, left_on=[col_a_user, col_a_spm], right_on=[col_b_user, col_b_spm], how='left')
         res = pd.merge(res, df_fee, left_on=[col_a_user, col_a_spm], right_on=[col_b_user, col_b_spm], how='left')
         res = res.fillna(0)
 
-        # 计算费用
+        # 费用计算
         res['支持时间（人天）'] = res[col_a_hrs] / 8
         res['人力费用'] = (res['支持时间（人天）'] * price_per_day).round(2)
         res['差旅补助'] = res['差旅补助'].round(2)
         res['差旅费控平台'] = res['差旅费控平台'].round(2)
         res['结算费用合计'] = (res['人力费用'] + res['差旅补助'] + res['差旅费控平台']).round(2)
 
-        # 结果表3 (明细)
+        # 结果表3
         rename_map = {col_a_user: '人员', dims_a['project']: '所属项目', dims_a['range']: '人事范围', col_a_spm: 'SPM', dims_a['contract']: '合同主体', dims_a['sales']: '销售人员', dims_a['dept']: '销售部门', col_a_hrs: '耗时（小时）'}
         t3 = res.rename(columns=rename_map)
         final_cols = ['序号','人员','所属项目','人事范围','SPM','合同主体','销售人员','销售部门','差旅补助','差旅费控平台','耗时（小时）','支持时间（人天）','人力费用','结算费用合计']
         t3.insert(0, '序号', range(1, len(t3)+1))
         t3 = t3[[c for c in final_cols if c in t3.columns]]
 
-        # 结果表2 (汇总)
+        # 结果表2
         t2_cols = ['人事范围', '合同主体', '销售部门']
         if all(c in t3.columns for c in t2_cols):
             t2 = t3.groupby(t2_cols).agg({'结算费用合计':'sum', '支持时间（人天）':'sum'}).reset_index()
@@ -248,16 +239,48 @@ class DataEngine:
             t2.insert(0, '序号', range(1, len(t2)+1))
         else: t2 = pd.DataFrame()
 
-        # 结果表1 (工时统计)
+        # 结果表1
         t1 = t3.groupby('人员')['耗时（小时）'].sum().reset_index()
         t1.rename(columns={'耗时（小时）':'项目工时'}, inplace=True)
-        # 动态判断人员类型
         t1['人员类型'] = t1['人员'].apply(lambda x: '实施交付部' if str(x).strip() == manager_name else '实施交付部云交付小组')
         t1['备注'] = ''
         t1.insert(0, '序号', range(1, len(t1)+1))
         t1 = t1[['序号', '人员', '人员类型', '项目工时', '备注']]
 
         return {'t1': t1, 't2': t2, 't3': t3}
+
+    @staticmethod
+    def verify_balance(df_a, df_b, df_result, config_df):
+        """
+        执行总额平衡校验 (Tie-out Check)
+        """
+        messages = []
+        is_balanced = True
+        
+        c = lambda t: DataEngine.get_col(config_df, t)
+        col_a_hrs = c('耗时（小时）')
+        col_b_amt = c('差旅补助')
+        
+        # 1. 工时校验
+        clean_a_hrs = DataEngine.clean_num(df_a, col_a_hrs).sum()
+        res_hrs = df_result['耗时（小时）'].sum()
+        
+        if abs(clean_a_hrs - res_hrs) > 0.1:
+            is_balanced = False
+            messages.append(f"⚠️ 工时失衡：源表({clean_a_hrs:,.1f}) != 结果表({res_hrs:,.1f})，差异 {clean_a_hrs - res_hrs:,.1f}")
+            
+        # 2. 金额校验
+        clean_b_amt = DataEngine.clean_num(df_b, col_b_amt).sum()
+        res_amt = df_result['差旅补助'].sum() + df_result['差旅费控平台'].sum()
+        
+        if abs(clean_b_amt - res_amt) > 0.1:
+            is_balanced = False
+            messages.append(f"⚠️ 金额失衡：源表({clean_b_amt:,.2f}) != 结果表({res_amt:,.2f})，差异 {clean_b_amt - res_amt:,.2f} (原因：B表存在A表没有的 SPM 号，导致关联失败资金漏算)")
+            
+        if is_balanced:
+            return True, "✅ 总额平衡校验通过：工时与金额输入输出完全一致。"
+        else:
+            return False, " | ".join(messages)
 
     @staticmethod
     def to_bytes(df):
@@ -276,9 +299,13 @@ class DataEngine:
                     cell.alignment = align_center
                     if cell.row == 1: cell.font = header_font
             for i, col in enumerate(out.columns):
-                max_len = len(str(col))
+                max_len = 0
+                try: max_len = len(str(col).encode('gbk'))
+                except: max_len = len(str(col))
                 for val in out[col]:
-                    v_len = len(str(val))
+                    v_len = 0
+                    try: v_len = len(str(val).encode('gbk'))
+                    except: v_len = len(str(val))
                     if v_len > max_len: max_len = v_len
                 adjusted_width = min((max_len + 2) * 1.1, 60) 
                 worksheet.column_dimensions[get_column_letter(i + 1)].width = adjusted_width
@@ -295,7 +322,6 @@ class WordGenerator:
         run = paragraph.add_run(str(text))
         run.font.bold = bold
         run.font.size = Pt(font_size)
-        # Linux下无SimSun，这里保留设置但实际可能回退到默认字体，防止崩溃可加try
         try:
             run.font.name = 'SimSun' 
             run._element.rPr.rFonts.set(qn('w:eastAsia'), 'SimSun')
@@ -365,7 +391,6 @@ class WordGenerator:
         WordGenerator.set_row_height(table0.rows[5], 4.17)
         WordGenerator.set_cell_style(table0.rows[5].cells[0].merge(table0.rows[5].cells[2]), "项目所属\n区域销售\n确认")
         
-        # 签字区
         c_sign = table0.rows[5].cells[3].merge(table0.rows[5].cells[9])
         c_sign.text = ""
         p = c_sign.add_paragraph("确认意见：\n\n\n\n签字（签章）：\n\n\n")
@@ -374,6 +399,8 @@ class WordGenerator:
         except: pass
         p_date = c_sign.add_paragraph("日期：    年    月    日        ")
         p_date.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        try: p_date.runs[0].font.name = 'SimSun'; p_date.runs[0]._element.rPr.rFonts.set(qn('w:eastAsia'), 'SimSun')
+        except: pass
 
         doc.add_paragraph("\n")
         
@@ -432,7 +459,7 @@ class WordGenerator:
             
             for _, row in df_curr.iterrows():
                 new_row = table1.add_row()
-                WordGenerator.set_row_height(new_row, 1.0) # Auto height approx
+                WordGenerator.set_row_height(new_row, 1.0) 
                 for idx, width in enumerate(t1_widths): new_row.cells[idx].width = Cm(width)
                 for i, col_name in enumerate(cols_map):
                     val = row.get(col_name, '')
@@ -535,9 +562,18 @@ class UIComponents:
         return any("阈值" in str(x) for x in err_df['信息'])
 
     @staticmethod
-    def render_download_zone(result_files, all_in_one_zip, word_files_dict, period_str):
+    def render_download_zone(result_files, all_in_one_zip, word_files_dict, period_str, balance_check):
+        is_bal, bal_msg = balance_check
+        
+        # 渲染总额校验结果
+        css_class = "balance-box-ok" if is_bal else "balance-box-err"
+        st.markdown(f"<div class='{css_class}'>{bal_msg}</div>", unsafe_allow_html=True)
+        
+        if not is_bal:
+            st.warning("⚠️ 提示：虽然生成了文件，但总额不平，建议检查 SPM 匹配情况。")
+
         with st.container(border=True):
-            st.success("✅ 计算成功 | 报表已生成")
+            st.success("✅ 计算完成 | 报表已生成")
             st.subheader("📦 批量下载")
             st.download_button("🚀 一键下载 (Excel + Word)", all_in_one_zip, "项目结算资料全集.zip", "application/zip", type="primary", use_container_width=True)
             st.divider()
@@ -609,6 +645,7 @@ if 'word_files' not in st.session_state: st.session_state.word_files = {}
 if 'result_files' not in st.session_state: st.session_state.result_files = {}
 if 'last_run_params' not in st.session_state: st.session_state.last_run_params = None
 if 'threshold_error_flag' not in st.session_state: st.session_state.threshold_error_flag = False
+if 'balance_check' not in st.session_state: st.session_state.balance_check = (True, "")
 
 inject_css()
 
@@ -658,7 +695,15 @@ if st.session_state.page == 'main':
                     st.session_state.last_run_params = current_params.copy()
                     st.rerun()
                 else:
+                    # 1. 计算
                     res = DataEngine.calculate(df_a, df_b, st.session_state.mapping_config, current_params['price'], current_params['sub_tag'], current_params['manager'])
+                    
+                    # 2. 总额稽核 (Balance Check)
+                    st.session_state.balance_check = DataEngine.verify_balance(
+                        df_a, df_b, res['t3'], st.session_state.mapping_config
+                    )
+                    
+                    # 3. 结果生成
                     excel_files_dict = {
                         "t1": DataEngine.to_bytes(res['t1']),
                         "t2": DataEngine.to_bytes(res['t2']),
@@ -680,6 +725,7 @@ if st.session_state.page == 'main':
                     with zipfile.ZipFile(buf_zip, 'w', zipfile.ZIP_DEFLATED) as z:
                         for fname, fcontent in all_files_to_zip.items(): z.writestr(fname, fcontent)
                     st.session_state.all_zip = buf_zip.getvalue()
+                    
                     st.session_state.is_calculated = True
                     st.session_state.error_report = None
                     st.session_state.last_run_params = current_params.copy()
@@ -692,7 +738,13 @@ if st.session_state.page == 'main':
             st.rerun()
             
     elif st.session_state.is_calculated:
-        UIComponents.render_download_zone(st.session_state.result_files, st.session_state.all_zip, st.session_state.word_files, current_params['period'])
+        UIComponents.render_download_zone(
+            st.session_state.result_files, 
+            st.session_state.all_zip, 
+            st.session_state.word_files, 
+            current_params['period'],
+            st.session_state.balance_check
+        )
 
 elif st.session_state.page == 'mapping':
     c1, c2 = st.columns([9, 1])
