@@ -751,11 +751,18 @@ elif st.session_state.page == 'mapping':
                 elif source_table == 'Source B' and not cols_b:
                     error_msg = f"⛔ 驳回修改 [{target}]: 请先上传 'Source B 差旅明细' 数据源。"
                 
-                # 门禁二：选错表拦截
-                elif source_table == 'Source A' and cols_a and new_match not in cols_a:
-                    error_msg = f"⚠️ 字段无效: '{new_match}' 不在 Source A 中。"
-                elif source_table == 'Source B' and cols_b and new_match not in cols_b:
-                    error_msg = f"⚠️ 字段无效: '{new_match}' 不在 Source B 中。"
+                # 门禁二：选错表拦截（物理隔离核心）
+                elif source_table == 'Source A':
+                    if cols_a and new_match not in cols_a:
+                        error_msg = f"⚠️ 字段无效: '{new_match}' 不属于 Source A，请重新选择。"
+                    elif not cols_a:
+                        error_msg = f"⛔ 权限锁定: 请先上传 Source A 数据源。"
+                
+                elif source_table == 'Source B':
+                    if cols_b and new_match not in cols_b:
+                        error_msg = f"⚠️ 字段无效: '{new_match}' 不属于 Source B，请重新选择。"
+                    elif not cols_b:
+                        error_msg = f"⛔ 权限锁定: 请先上传 Source B 数据源。"
                 
                 # 其他安全检查
                 elif '🔒' in source_table:
@@ -778,13 +785,31 @@ elif st.session_state.page == 'mapping':
                 st.rerun()
 
         t1, t2, t3 = st.tabs(["结果表3 (底表)", "结果表2 (结算)", "结果表1 (工时)"])
-        merged_options = cols_a + cols_b
+        
+        # --- 核心修复：根据上传状态动态构建选项，实现 UI 隔离 ---
+        # 只有上传了对应表，其字段才会出现在下拉列表中
+        current_options = []
+        if cols_a: current_options.extend(cols_a)
+        if cols_b: current_options.extend(cols_b)
+        
+        # 移除重复项并保持顺序
+        current_options = list(dict.fromkeys(current_options))
         
         with t1: 
-            # 判断是否禁用匹配字段整列
+            # 如果 A 和 B 都没传，整列禁用；如果传了任意一个，解锁但受 save_and_validate 保护
             disable_match_field_col = not (bool(cols_a) or bool(cols_b))
-            edited_t3 = UIComponents.render_native_editor("全量明细底表", df_c[df_c["所属表"]=="结果表3"], is_default, merged_options, disable_match_field_col)
-            if not is_default and edited_t3 is not None: save_and_validate(edited_t3)
+            
+            # 渲染编辑器
+            edited_t3 = UIComponents.render_native_editor(
+                "全量明细底表", 
+                df_c[df_c["所属表"]=="结果表3"], 
+                is_default, 
+                current_options, 
+                disable_match_field_col
+            )
+            
+            if not is_default and edited_t3 is not None: 
+                save_and_validate(edited_t3)
         with t2: 
             st.info("ℹ️ 结果表 2 为衍生汇总表，规则由系统锁定。")
             UIComponents.render_native_editor("结算汇总表", df_c[df_c["所属表"]=="结果表2"], True, [], True)
