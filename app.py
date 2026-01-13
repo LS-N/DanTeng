@@ -765,11 +765,16 @@ elif st.session_state.page == 'mapping':
             # -----------------------------------------------------------------------------------
 
         c1, c2 = st.columns([8, 2], vertical_alignment="center")
-        c1.markdown(f"<div class='nav-header'>📏 正在编辑: {st.session_state.editing_template_name}</div>", unsafe_allow_html=True)
+        
+        # --- NEW LOGIC: Hide title if it's the default template ---
+        is_default = (st.session_state.editing_template_name == TemplateManager.DEFAULT_NAME)
+        if not is_default:
+            c1.markdown(f"<div class='nav-header'>📏 正在编辑: {st.session_state.editing_template_name}</div>", unsafe_allow_html=True)
+        # ----------------------------------------------------------
+        
         if c2.button("⬅️ 返回主页", type="tertiary", use_container_width=True): st.session_state.page = 'main'; st.rerun()
         st.markdown("<hr style='margin-top:0; border-color:#30363d;'>", unsafe_allow_html=True)
         
-        is_default = (st.session_state.editing_template_name == TemplateManager.DEFAULT_NAME)
         cols_a = []; cols_b = []
         
         if not is_default:
