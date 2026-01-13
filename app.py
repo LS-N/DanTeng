@@ -455,8 +455,6 @@ class WordGenerator:
         if df_t3 is None or df_t3.empty:
             return {}, "数据为空"
             
-        # Group by Contract (Purchase), Range (Sales), Dept
-        # Required columns must exist in T3
         req = ['合同主体', '人事范围', '销售部门']
         if not all(c in df_t3.columns for c in req):
             return {}, f"Result T3 缺少必要的列: {req}"
@@ -467,50 +465,35 @@ class WordGenerator:
         for (purch_comp, sales_comp, dept_name), group in grouped:
             doc, table0, table1 = WordGenerator._create_base_doc(purch_comp, sales_comp, dept_name, period_str)
             
-            # Fill Table 1 (Details)
-            # Map columns: ['序号','人员','所属项目','人事范围','SPM','合同主体','销售人员','销售部门','差旅补助','差旅费控平台','耗时（小时）','支持时间（人天）','人力费用','结算费用合计']
             for _, row in group.iterrows():
                 cells = table1.add_row().cells
-                # Row mapping
                 WordGenerator.set_cell_style(cells[0], row['人员'])
                 WordGenerator.set_cell_style(cells[1], row['人事范围'])
                 WordGenerator.set_cell_style(cells[2], row['所属项目'])
                 WordGenerator.set_cell_style(cells[3], row['合同主体'])
                 WordGenerator.set_cell_style(cells[4], row['销售人员'])
-                WordGenerator.set_cell_style(cells[5], row['销售部门']) # Use Dept as Region for now
+                WordGenerator.set_cell_style(cells[5], row['销售部门']) 
                 WordGenerator.set_cell_style(cells[6], f"{row['支持时间（人天）']:.2f}")
                 WordGenerator.set_cell_style(cells[7], f"{row['人力费用']:.2f}")
                 WordGenerator.set_cell_style(cells[8], f"{row['差旅补助']:.2f}")
                 WordGenerator.set_cell_style(cells[9], f"{row['差旅费控平台']:.2f}")
                 WordGenerator.set_cell_style(cells[10], f"{row['结算费用合计']:.2f}")
 
-            # Calculate Totals for Table 0 (Summary)
             sum_days = group['支持时间（人天）'].sum()
             sum_man_cost = group['人力费用'].sum()
-            sum_travel = group['差旅补助'].sum() + group['差旅费控平台'].sum()
             total_cost = group['结算费用合计'].sum()
             
-            # Fill Summary Row (Row index 3 in table0)
-            # Cells: 0=StdProj, 1=DataGov, 2=Ops, 3=StdCost, 4=DataCost, 5=OpsCost, 6=Sub, 7=Fee, 8=Work, 9=Total
-            # Simplified logic: Put all days in 'Standard Project' (0) and cost in (3) for now, unless we distinguish project types
-            # Based on headers, it seems we might need project type logic. For now, aggregate all into first column to be safe.
-            
-            # Assuming all are standard delivery for now
-            WordGenerator.set_cell_style(table0.rows[3].cells[0], f"{sum_days:.2f}") # Days
+            WordGenerator.set_cell_style(table0.rows[3].cells[0], f"{sum_days:.2f}") 
             WordGenerator.set_cell_style(table0.rows[3].cells[1], "-")
             WordGenerator.set_cell_style(table0.rows[3].cells[2], "-")
-            
-            WordGenerator.set_cell_style(table0.rows[3].cells[3], f"{sum_man_cost:.2f}") # Man Cost
+            WordGenerator.set_cell_style(table0.rows[3].cells[3], f"{sum_man_cost:.2f}") 
             WordGenerator.set_cell_style(table0.rows[3].cells[4], "-")
             WordGenerator.set_cell_style(table0.rows[3].cells[5], "-")
-            
             WordGenerator.set_cell_style(table0.rows[3].cells[6], f"{group['差旅补助'].sum():.2f}")
             WordGenerator.set_cell_style(table0.rows[3].cells[7], f"{group['差旅费控平台'].sum():.2f}")
-            
-            WordGenerator.set_cell_style(table0.rows[3].cells[8], f"{sum_days:.2f}") # Total Days
-            WordGenerator.set_cell_style(table0.rows[3].cells[9], f"{total_cost:.2f}") # Grand Total
+            WordGenerator.set_cell_style(table0.rows[3].cells[8], f"{sum_days:.2f}") 
+            WordGenerator.set_cell_style(table0.rows[3].cells[9], f"{total_cost:.2f}") 
 
-            # Save
             out = io.BytesIO()
             doc.save(out)
             safe_dept = str(dept_name).replace('/', '_').replace('\\', '_')
@@ -660,20 +643,28 @@ if st.session_state.page == 'main':
     with st.container(border=True):
         st.markdown("### 📂 数据源控制台")
         st.divider()
+        
+        # --- NEW LOCATION FOR TEMPLATE SELECTOR (Centered) ---
+        all_templates = TemplateManager.get_all_names()
+        if st.session_state.active_template_name not in all_templates: 
+            st.session_state.active_template_name = TemplateManager.DEFAULT_NAME
+            
+        _, c_center, _ = st.columns([1, 2, 1])
+        with c_center:
+            selected_tpl = st.selectbox("计算规则模板", options=all_templates, index=all_templates.index(st.session_state.active_template_name), key="main_template_selector", label_visibility="collapsed")
+            
+        if selected_tpl != st.session_state.active_template_name:
+            st.session_state.active_template_name = selected_tpl; st.session_state.is_calculated = False; st.rerun()
+        # -----------------------------------------------------
+
         c1, c2 = st.columns(2)
         with c1: UIComponents.render_file_slot('A', "Source A: 投入明细 (工时)", st.session_state.data_store)
         with c2: UIComponents.render_file_slot('B', "Source B: 差旅明细 (费用)", st.session_state.data_store)
         
-        bc1, bc2 = st.columns([0.8, 0.2], vertical_alignment="bottom")
-        if bc1.button("🗑️ 清空所有文件", type="secondary", use_container_width=True): 
+        if st.button("🗑️ 清空所有文件", type="secondary", use_container_width=True): 
             st.session_state.data_store = {'A': {'df': None, 'name': None}, 'B': {'df': None, 'name': None}}
             st.session_state.is_calculated = False; st.session_state.error_report = None; st.session_state.all_zip = None; st.session_state.last_run_params = None; st.rerun()
         
-        all_templates = TemplateManager.get_all_names()
-        if st.session_state.active_template_name not in all_templates: st.session_state.active_template_name = TemplateManager.DEFAULT_NAME
-        selected_tpl = bc2.selectbox("计算规则模板", options=all_templates, index=all_templates.index(st.session_state.active_template_name), key="main_template_selector", label_visibility="collapsed")
-        if selected_tpl != st.session_state.active_template_name:
-            st.session_state.active_template_name = selected_tpl; st.session_state.is_calculated = False; st.rerun()
     st.divider()
     
     has_files = st.session_state.data_store['A']['df'] is not None and st.session_state.data_store['B']['df'] is not None
@@ -730,8 +721,9 @@ elif st.session_state.page == 'mapping':
         if c2.button("⬅️", key="back_from_prank", type="tertiary", use_container_width=True): st.session_state.page = 'main'; st.rerun()
         st.markdown("""<style>.prank-container { display: flex; justify-content: center; margin-top: 150px; } .prank-text { font-size: 2.5rem; color: #30363d; font-family: 'Courier New', monospace; cursor: default; } a.prank-link { text-decoration: none; color: inherit; cursor: text; } a.prank-link:hover { color: inherit; text-decoration: none; }</style><div class="prank-container"><span class="prank-text">你以为有什么<a href="?prank=1" target="_self" class="prank-link">？</a></span></div>""", unsafe_allow_html=True)
     else:
-        # Added this line to fix the NameError
+        # --- FIXED NameError: Define all_templates here as well ---
         all_templates = TemplateManager.get_all_names() 
+        # ----------------------------------------------------------
         with st.sidebar:
             st.header("📏 规则模板管理")
             st.divider()
