@@ -6,27 +6,17 @@ import zipfile
 import re
 
 # ==============================================================================
-# 依赖库检查与导入 (python-docx)
-# ==============================================================================
-try:
-    import docx
-    from docx.shared import Pt, Cm, RGBColor
-    from docx.oxml.ns import qn
-    from docx.oxml import OxmlElement
-    from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
-    from docx.enum.table import WD_ALIGN_VERTICAL, WD_ROW_HEIGHT_RULE
-    HAS_DOCX = True
-except ImportError:
-    HAS_DOCX = False
-
-# Excel样式依赖
-from openpyxl.styles import Border, Side, Alignment, Font, PatternFill
-from openpyxl.utils import get_column_letter
-
-# ==============================================================================
 # Zone 0: 全局配置 & 样式注入
 # ==============================================================================
 st.set_page_config(page_title="淡藤财务报表 Pro", page_icon="😈", layout="wide", initial_sidebar_state="expanded")
+
+# --- 核心修改：彩蛋回调拦截逻辑 (必须放在最前面) ---
+# 解释：当用户点击伪装的问号链接时，浏览器会刷新并带上参数 ?prank=solved
+# 这里检测到参数后，立刻修改 session_state，并清理 URL，让用户感觉不到发生了跳转
+if "prank" in st.query_params:
+    st.session_state.page = 'mapping'       # 保持在映射页
+    st.session_state.prank_solved = True    # 标记彩蛋已破解
+    st.query_params.clear()                 # 清理URL参数，深藏功与名
 
 def inject_css():
     st.markdown("""
@@ -43,39 +33,23 @@ def inject_css():
         .file-icon { font-size: 24px; display: flex; align-items: center; justify-content: center; height: 100%; }
         
         /* === 修复 X 按钮不显示的核心 CSS === */
-        /* 1. 确保列内容不被隐藏 */
         div[data-testid="column"] { overflow: visible !important; }
-
-        /* 2. 针对删除按钮 (secondary) 的强制样式 */
         div[data-testid="column"] button[kind="secondary"] {
-            border: 1px solid rgba(255,255,255,0.1) !important; /* 微弱边框，确保可见 */
-            background-color: rgba(255,255,255,0.05) !important; /* 微弱背景 */
-            color: #c9d1d9 !important; /* 亮灰色文字 */
-            padding: 0px !important;
-            margin: 0px !important;
-            height: 42px !important; /* 强制高度 */
-            width: 100% !important;  /* 强制撑满 */
-            min-width: 40px !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
-            float: none !important;
-            border-radius: 6px !important;
-            transition: all 0.2s;
+            border: 1px solid rgba(255,255,255,0.1) !important;
+            background-color: rgba(255,255,255,0.05) !important;
+            color: #c9d1d9 !important;
+            padding: 0px !important; margin: 0px !important;
+            height: 42px !important; width: 100% !important; min-width: 40px !important;
+            display: flex !important; align-items: center !important; justify-content: center !important;
+            float: none !important; border-radius: 6px !important; transition: all 0.2s;
         }
-
-        /* 3. 悬停效果 */
         div[data-testid="column"] button[kind="secondary"]:hover {
-            color: #ff7b72 !important; /* 红色文字 */
-            border-color: #ff7b72 !important; /* 红色边框 */
+            color: #ff7b72 !important; border-color: #ff7b72 !important;
             background-color: rgba(255, 123, 114, 0.1) !important;
         }
-
-        /* 4. 兼容性修复 */
         div[data-testid="column"] button[kind="secondary"]:active,
         div[data-testid="column"] button[kind="secondary"]:focus {
-            box-shadow: none !important;
-            outline: none !important;
+            box-shadow: none !important; outline: none !important;
         }
         
         /* 顶部信息栏样式 */
@@ -86,6 +60,23 @@ def inject_css():
 
     </style>
     """, unsafe_allow_html=True)
+
+# ==============================================================================
+# 依赖库检查与导入 (python-docx)
+# ==============================================================================
+try:
+    import docx
+    from docx.shared import Pt, Cm, RGBColor
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+    from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
+    from docx.enum.table import WD_ALIGN_VERTICAL, WD_ROW_HEIGHT_RULE
+    HAS_DOCX = True
+except ImportError:
+    HAS_DOCX = False
+
+from openpyxl.styles import Border, Side, Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
 
 # ==============================================================================
 # Zone A: 纯逻辑层 (包含 T4 校验、空白页修复、Excel表头插入)
@@ -874,60 +865,48 @@ if st.session_state.page == 'main':
         )
 
 elif st.session_state.page == 'mapping':
-    # === 恶作剧彩蛋逻辑 (优化版) ===
+    # === 恶作剧彩蛋逻辑 (隐形链接版) ===
     if 'prank_solved' not in st.session_state:
         st.session_state.prank_solved = False
 
     if not st.session_state.prank_solved:
-        # 1. 注入 CSS：设置字体样式，并剥离右侧按钮的所有视觉特征
+        # 1. 注入 CSS：强制修改伪装链接的鼠标样式，使其看起来像普通文本光标
         st.markdown("""
         <style>
-        /* 文本部分的样式 */
-        .prank-text {
-            text-align: right;
-            font-size: 2.5rem;
-            color: #30363d; /* 很暗的灰色，接近背景 */
-            font-family: 'Courier New', monospace;
-            padding-right: 0px;
-            margin-right: -15px; /* 将文本向右拉，紧贴按钮 */
+        .prank-container {
+            display: flex;
+            justify-content: center;
             margin-top: 150px;
         }
-        /* 按钮部分的样式覆盖 */
-        div[data-testid="column"] button {
-            background: transparent !important;
-            border: none !important;
-            box-shadow: none !important;
-            color: #30363d !important; /* 颜色与文本一致 */
-            font-size: 2.5rem !important;
-            font-family: 'Courier New', monospace !important;
-            padding: 0 !important;
-            margin-top: 150px !important;
-            cursor: text !important; /* 关键：鼠标移上去显示文本光标，而不是手型 */
+        .prank-text {
+            font-size: 2.5rem;
+            color: #30363d; /* 深灰色，像背景 */
+            font-family: 'Courier New', monospace;
+            cursor: default; /* 默认箭头光标 */
         }
-        /* 移除悬停和点击时的背景变色 */
-        div[data-testid="column"] button:hover {
-            color: #30363d !important;
-            background: transparent !important;
+        /* 核心伪装：链接看起来和普通文字一模一样，连光标也是 text */
+        a.prank-link {
+            text-decoration: none;
+            color: inherit;
+            cursor: text; /* 关键：鼠标移上去变成文本输入状，用户绝对想不到是链接 */
         }
-        div[data-testid="column"] button:active {
-            color: #30363d !important;
-            background: transparent !important;
+        a.prank-link:hover {
+            color: inherit;
+            text-decoration: none;
         }
         </style>
         """, unsafe_allow_html=True)
 
-        # 2. 布局：左右各一半，左边放文本，右边放按钮
-        c_left, c_right = st.columns([0.55, 0.45]) 
+        # 2. 渲染伪装的 HTML
+        # 这里的问号被包裹在 <a> 标签里，点击会刷新页面并带上参数 ?prank=1
+        st.markdown("""
+        <div class="prank-container">
+            <span class="prank-text">
+                你以为有什么<a href="?prank=1" target="_self" class="prank-link">？</a>
+            </span>
+        </div>
+        """, unsafe_allow_html=True)
         
-        with c_left:
-            # 显示不可点击的前半部分
-            st.markdown('<div class="prank-text">你以为有什么</div>', unsafe_allow_html=True)
-        
-        with c_right:
-            # 显示可点击的后半部分（问号），但视觉上它就是文本
-            if st.button("？"):
-                st.session_state.prank_solved = True
-                st.rerun()
     else:
         # 真正的映射页面内容
         c1, c2 = st.columns([9, 1])
