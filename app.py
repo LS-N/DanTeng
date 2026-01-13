@@ -726,55 +726,56 @@ elif st.session_state.page == 'mapping':
         
         def save_and_validate(edited_df):
             if is_default: return
-            # 获取当前模板的最新配置副本
             current_config = st.session_state.templates[st.session_state.editing_template_name]
+            has_error = False
             
             for idx, row in edited_df.iterrows():
                 target = row['目标字段']
                 source_table = row['源表']
                 new_match = str(row['匹配字段']).strip()
                 
-                # 获取该字段在 session_state 中的原始值
                 mask = (current_config['所属表'] == row['所属表']) & (current_config['目标字段'] == target)
                 if not mask.any(): continue
                 
                 orig_idx = current_config[mask].index[0]
                 old_match = str(current_config.at[orig_idx, '匹配字段']).strip()
                 
-                # 如果没有变化，跳过
                 if new_match == old_match: continue
 
                 # --- 核心门禁逻辑 ---
+                error_msg = None
                 
-                # 门禁一：检查是否上传了对应的数据源
+                # 门禁一：未上传拦截
                 if source_table == 'Source A' and not cols_a:
-                    st.error(f"⛔ 驳回修改 [{target}]: 请先上传 'Source A 工时统计' 数据源以解锁编辑权限。")
-                    continue # 驳回，不更新 session_state
+                    error_msg = f"⛔ 驳回修改 [{target}]: 请先上传 'Source A 工时统计' 数据源。"
+                elif source_table == 'Source B' and not cols_b:
+                    error_msg = f"⛔ 驳回修改 [{target}]: 请先上传 'Source B 差旅明细' 数据源。"
                 
-                if source_table == 'Source B' and not cols_b:
-                    st.error(f"⛔ 驳回修改 [{target}]: 请先上传 'Source B 差旅明细' 数据源以解锁编辑权限。")
-                    continue # 驳回
+                # 门禁二：选错表拦截
+                elif source_table == 'Source A' and cols_a and new_match not in cols_a:
+                    error_msg = f"⚠️ 字段无效: '{new_match}' 不在 Source A 中。"
+                elif source_table == 'Source B' and cols_b and new_match not in cols_b:
+                    error_msg = f"⚠️ 字段无效: '{new_match}' 不在 Source B 中。"
                 
-                # 门禁二：检查选择的字段是否在已上传的数据源中
-                if source_table == 'Source A' and cols_a and new_match not in cols_a:
-                    st.warning(f"⚠️ 字段无效: '{new_match}' 不在已上传的 Source A 列名中，已自动忽略。")
-                    continue
-                
-                if source_table == 'Source B' and cols_b and new_match not in cols_b:
-                    st.warning(f"⚠️ 字段无效: '{new_match}' 不在已上传的 Source B 列名中，已自动忽略。")
-                    continue
+                # 其他安全检查
+                elif '🔒' in source_table:
+                    error_msg = f"🔒 系统锁定字段 [{target}] 不可修改。"
+                elif not new_match or new_match in ['nan', 'None', '-']:
+                    error_msg = f"❌ 字段 [{target}] 不能为空。"
 
-                # 其他安全检查：防空、防系统锁定字段
-                if '🔒' in source_table:
-                    st.toast(f"🔒 系统锁定字段 [{target}] 不可修改", icon="🚫")
-                    continue
-                
-                if not new_match or new_match in ['nan', 'None', '-']:
-                    st.toast(f"❌ 字段 [{target}] 不能为空", icon="🚫")
-                    continue
+                if error_msg:
+                    st.error(error_msg)
+                    has_error = True
+                    # 显式重置该单元格为旧值，防止 UI 状态残留
+                    edited_df.at[idx, '匹配字段'] = old_match
+                else:
+                    # 校验通过，更新 session_state
+                    st.session_state.templates[st.session_state.editing_template_name].at[orig_idx, '匹配字段'] = new_match
 
-                # 校验通过，更新 session_state
-                st.session_state.templates[st.session_state.editing_template_name].at[orig_idx, '匹配字段'] = new_match
+            # 如果发生过错误，强制执行一次 rerun 以同步 UI 状态
+            if has_error:
+                time.sleep(1.5) # 留出时间让用户看清错误提示
+                st.rerun()
 
         t1, t2, t3 = st.tabs(["结果表3 (底表)", "结果表2 (结算)", "结果表1 (工时)"])
         merged_options = cols_a + cols_b
