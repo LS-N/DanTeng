@@ -6,7 +6,7 @@ import zipfile
 import re 
 
 # ==============================================================================
-# 依赖库检查与导入
+# 依赖库检查与导入 (python-docx)
 # ==============================================================================
 try:
     import docx
@@ -78,8 +78,8 @@ class DataEngine:
             {"所属表": "结果表3", "序号": 6, "目标字段": "合同主体", "源表": "Source A", "匹配字段": "合同主体", "逻辑说明": "维度 (->采购公司)"},
             {"所属表": "结果表3", "序号": 7, "目标字段": "销售人员", "源表": "Source A", "匹配字段": "销售", "逻辑说明": "维度 (First)"},
             {"所属表": "结果表3", "序号": 8, "目标字段": "销售部门", "源表": "Source A", "匹配字段": "销售部门", "逻辑说明": "维度 (->采购部门)"},
-            {"所属表": "结果表3", "序号": 9, "目标字段": "差旅补助", "源表": "Source B", "匹配字段": "金额", "逻辑说明": "筛选：类型='差旅补助' | 清洗：x10000转元"},
-            {"所属表": "结果表3", "序号": 10, "目标字段": "差旅费控平台", "源表": "Source B", "匹配字段": "金额", "逻辑说明": "筛选：类型!='差旅补助' | 清洗：x10000转元"},
+            {"所属表": "结果表3", "序号": 9, "目标字段": "差旅补助", "源表": "Source B", "匹配字段": "金额", "逻辑说明": "筛选：类型='差旅补助'"},
+            {"所属表": "结果表3", "序号": 10, "目标字段": "差旅费控平台", "源表": "Source B", "匹配字段": "金额", "逻辑说明": "筛选：类型!='差旅补助'"},
             {"所属表": "结果表3", "序号": 11, "目标字段": "耗时（小时）", "源表": "Source A", "匹配字段": "交付工时", "逻辑说明": "SUM聚合 (清洗去逗号)"},
             {"所属表": "结果表3", "序号": 12, "目标字段": "支持时间（人天）", "源表": "🔒 公式计算", "匹配字段": "-", "逻辑说明": "耗时 / 8"},
             {"所属表": "结果表3", "序号": 13, "目标字段": "人力费用", "源表": "🔒 公式计算", "匹配字段": "-", "逻辑说明": "人天 * 单价 (保留2位小数)"},
@@ -159,7 +159,8 @@ class DataEngine:
 
         df_a[col_a_hrs] = DataEngine.clean_num(df_a, col_a_hrs)
         df_b[col_b_amt] = DataEngine.clean_num(df_b, col_b_amt)
-        df_b[col_b_amt] = (df_b[col_b_amt] * 10000).round(2)
+        # 【修正】移除乘以10000的逻辑，直接取原始值
+        df_b[col_b_amt] = df_b[col_b_amt].round(2)
 
         if col_b_user and col_b_user in df_b.columns:
             df_b[col_b_user] = df_b[col_b_user].astype(str).str.replace('_云计算', '', regex=False).str.strip()
@@ -212,27 +213,21 @@ class DataEngine:
     @staticmethod
     def to_bytes(df):
         """
-        【核心修改】生成带边框、居中对齐、自适应列宽的 Excel
+        生成带边框、居中对齐、自适应列宽的 Excel
         """
         b = io.BytesIO()
-        # 移除系统列
         out = df.drop(columns=['_sys_id'], errors='ignore')
         
         with pd.ExcelWriter(b, engine='openpyxl') as writer:
             out.to_excel(writer, index=False, sheet_name='Sheet1')
-            
-            # 获取 worksheet 对象进行样式修改
             workbook = writer.book
             worksheet = writer.sheets['Sheet1']
             
-            # 1. 定义样式
             thin = Side(border_style="thin", color="000000")
             border = Border(top=thin, left=thin, right=thin, bottom=thin)
             align_center = Alignment(horizontal='center', vertical='center', wrap_text=False)
-            header_font = Font(bold=True) # 表头加粗
+            header_font = Font(bold=True)
             
-            # 2. 遍历数据区域（包括表头）应用样式
-            # min_row=1 表示从表头开始
             for row in worksheet.iter_rows(min_row=1, max_row=len(out)+1, min_col=1, max_col=len(out.columns)):
                 for cell in row:
                     cell.border = border
@@ -240,30 +235,16 @@ class DataEngine:
                     if cell.row == 1:
                         cell.font = header_font
 
-            # 3. 自动调整列宽
             for i, col in enumerate(out.columns):
-                # 计算该列所有内容的最大长度 (粗略估计：中文算2，英文算1)
                 max_len = 0
-                
-                # 先看表头
-                try:
-                    header_len = len(str(col).encode('gbk'))
-                except:
-                    header_len = len(str(col))
+                try: header_len = len(str(col).encode('gbk'))
+                except: header_len = len(str(col))
                 max_len = header_len
-
-                # 再看内容 (取前50行采样以提高性能，或者全量)
                 for val in out[col]:
                     if val is not None:
-                        try:
-                            # gbk编码下中文占2字节
-                            v_len = len(str(val).encode('gbk'))
-                        except:
-                            v_len = len(str(val))
-                        if v_len > max_len:
-                            max_len = v_len
-                
-                # 设置宽度 (稍微加点余量，最大不超过60)
+                        try: v_len = len(str(val).encode('gbk'))
+                        except: v_len = len(str(val))
+                        if v_len > max_len: max_len = v_len
                 adjusted_width = min((max_len + 2) * 1.1, 60) 
                 col_letter = get_column_letter(i + 1)
                 worksheet.column_dimensions[col_letter].width = adjusted_width
