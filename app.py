@@ -31,15 +31,45 @@ st.set_page_config(page_title="淡藤财务报表 Pro", page_icon="😈", layout
 def inject_css():
     st.markdown("""
     <style>
-        :root { --bg-color: #0d1117; --card-bg: #161b22; --accent: #238636; --text: #c9d1d9; --border-color: #555c65; }
+        :root { --bg-color: #0d1117; --card-bg: #161b22; --accent: #238636; --text: #c9d1d9; --border-color: #30363d; }
         .stApp { background-color: var(--bg-color); color: var(--text); }
+        
+        /* 顶部导航与容器样式 */
         .nav-header { font-size: 1.2rem; font-weight: bold; display:flex; align-items:center; height: 100%; }
         .info-bar { background-color: rgba(56, 139, 253, 0.1); border-left: 4px solid #58a6ff; color: #c9d1d9; padding: 8px 15px; margin-bottom: 20px; font-size: 0.9rem; border-radius: 4px; }
         .error-box { border: 1px solid #ff7b72; background-color: rgba(255, 123, 114, 0.1); padding: 15px; border-radius: 6px; margin-bottom: 15px; }
         .balance-box-ok { border: 1px solid #238636; background-color: rgba(35, 134, 54, 0.1); padding: 10px; border-radius: 6px; margin-bottom: 15px; color: #3fb950; }
         .balance-box-err { border: 1px solid #da3633; background-color: rgba(218, 54, 51, 0.1); padding: 10px; border-radius: 6px; margin-bottom: 15px; color: #f85149; font-weight: bold;}
         
+        /* 侧边栏按钮样式 */
         section[data-testid="stSidebar"] .stButton button { width: 100%; border-radius: 4px; font-weight: bold; }
+        
+        /* === 文件卡片样式 === */
+        
+        /* 定制删除按钮 (X) */
+        div[data-testid="column"] button[kind="secondary"] {
+            border: none;
+            background: transparent;
+            color: #8b949e;
+            font-size: 16px;
+            padding: 0px 5px;
+            line-height: 1;
+            min-height: 0px;
+            float: right;
+        }
+        div[data-testid="column"] button[kind="secondary"]:hover {
+            color: #ff7b72; /* 悬停变红 */
+            background: rgba(255, 123, 114, 0.1);
+            border: 1px solid #ff7b72;
+        }
+        
+        /* 文件名样式 */
+        .file-name { font-weight: 600; font-size: 15px; color: #e6edf3; display: block; margin-bottom: 2px;}
+        /* 统计数据样式 */
+        .file-stats { font-size: 12px; color: #8b949e; display: block; }
+        /* 图标样式 */
+        .file-icon { font-size: 24px; display: flex; align-items: center; justify-content: center; height: 100%; }
+        
     </style>
     """, unsafe_allow_html=True)
 
@@ -242,7 +272,7 @@ class DataEngine:
         # 结果表1
         t1 = t3.groupby('人员')['耗时（小时）'].sum().reset_index()
         t1.rename(columns={'耗时（小时）':'项目工时'}, inplace=True)
-        # ⚠️ 回退为硬编码
+        # ⚠️ 恢复硬编码
         t1['人员类型'] = t1['人员'].apply(lambda x: '实施交付部' if str(x).strip() == '黄毅兵' else '实施交付部云交付小组')
         t1['备注'] = ''
         t1.insert(0, '序号', range(1, len(t1)+1))
@@ -490,7 +520,6 @@ class UIComponents:
                 st.session_state.params = {
                     'price': 1500, 'hours_limit': 100, 'sub_tag': "差旅补助", 
                     'period': "2025年第三季度"
-                    # ⚠️ 移除了 manager 参数
                 }
 
             st.session_state.params['price'] = st.number_input("人力单价 (元/天)", value=st.session_state.params['price'], step=100)
@@ -498,8 +527,6 @@ class UIComponents:
             st.session_state.params['hours_limit'] = st.number_input("工时阈值 (小时)", value=st.session_state.params['hours_limit'])
             st.session_state.params['sub_tag'] = st.text_input("补助关键词", value=st.session_state.params['sub_tag'])
             st.session_state.params['period'] = st.text_input("结算周期文案", value=st.session_state.params['period'])
-            
-            # ⚠️ 移除了负责人输入框
             
             current_params = st.session_state.params.copy()
             last_run_params = st.session_state.get('last_run_params', None)
@@ -531,29 +558,51 @@ class UIComponents:
 
     @staticmethod
     def render_file_slot(key, title, data_store):
+        """
+        渲染文件上传槽位 (Card Design)
+        """
         data = data_store[key]
         has_file = data['df'] is not None
+        
         with st.container(border=True):
             if not has_file:
                 st.markdown(f"**{title}**")
                 file = st.file_uploader(title, type=['xlsx', 'csv'], key=f"uploader_{key}", label_visibility="collapsed")
+                
                 if file:
                     df = UIComponents.load_data_cached(file, file.name)
                     if df is not None:
                         st.session_state.data_store[key] = {'df': df, 'name': file.name}
                         st.session_state.is_calculated = False
                         st.session_state.error_report = None
+                        st.session_state.balance_check = (True, "")
                         st.session_state.last_run_params = None
                         st.rerun()
             else:
-                c1, c2 = st.columns([9, 1])
-                c1.markdown(f"✅ **{data['name']}**")
-                if c2.button("Del", key=f"del_{key}"): 
-                    st.session_state.data_store[key] = {'df': None, 'name': None}
-                    st.session_state.is_calculated = False
-                    st.session_state.error_report = None
-                    st.session_state.last_run_params = None
-                    st.rerun()
+                # 布局：图标(15%) | 信息(75%) | 删除按钮(10%)
+                c_icon, c_info, c_close = st.columns([0.15, 0.75, 0.1])
+                
+                with c_icon:
+                    st.markdown('<div class="file-icon">📄</div>', unsafe_allow_html=True)
+                
+                with c_info:
+                    row_count = len(data['df'])
+                    row_str = "{:,}".format(row_count)
+                    st.markdown(f"""
+                    <div style="display: flex; flex-direction: column; justify-content: center; height: 100%;">
+                        <span class="file-name">{data['name']}</span>
+                        <span class="file-stats">📊 已加载 {row_str} 条数据</span>
+                    </div>
+                    """, unsafe_allow_html=True)
+                
+                with c_close:
+                    if st.button("✕", key=f"del_{key}", help="移除此文件", type="secondary"): 
+                        st.session_state.data_store[key] = {'df': None, 'name': None}
+                        st.session_state.is_calculated = False
+                        st.session_state.error_report = None
+                        st.session_state.balance_check = (True, "")
+                        st.session_state.last_run_params = None
+                        st.rerun()
 
     @staticmethod
     def render_error_report(err_df):
@@ -568,7 +617,6 @@ class UIComponents:
     def render_download_zone(result_files, all_in_one_zip, word_files_dict, period_str, balance_check):
         is_bal, bal_msg = balance_check
         
-        # 渲染总额校验结果
         css_class = "balance-box-ok" if is_bal else "balance-box-err"
         st.markdown(f"<div class='{css_class}'>{bal_msg}</div>", unsafe_allow_html=True)
         
@@ -698,7 +746,7 @@ if st.session_state.page == 'main':
                     st.session_state.last_run_params = current_params.copy()
                     st.rerun()
                 else:
-                    # 1. 计算 (⚠️ 不传 manager 参数了)
+                    # 1. 计算 (不传 manager 参数)
                     res = DataEngine.calculate(df_a, df_b, st.session_state.mapping_config, current_params['price'], current_params['sub_tag'])
                     
                     # 2. 总额稽核 (Balance Check)
