@@ -175,7 +175,7 @@ class DataEngine:
         return errors, df_a, df_b
 
     @staticmethod
-    def calculate(df_a, df_b, config_df, price_per_day, subsidy_tag, manager_name):
+    def calculate(df_a, df_b, config_df, price_per_day, subsidy_tag):
         c = lambda t: DataEngine.get_col(config_df, t)
         col_a_user = c('人员')
         col_a_spm = c('SPM')
@@ -189,7 +189,7 @@ class DataEngine:
         # 清洗
         df_a[col_a_hrs] = DataEngine.clean_num(df_a, col_a_hrs)
         df_b[col_b_amt] = DataEngine.clean_num(df_b, col_b_amt)
-        # 假设源表金额已经是元，如果以前是万元需在此处 * 10000
+        # 假设源表金额已经是元
         df_b[col_b_amt] = df_b[col_b_amt].round(2)
 
         if col_b_user and col_b_user in df_b.columns:
@@ -242,7 +242,8 @@ class DataEngine:
         # 结果表1
         t1 = t3.groupby('人员')['耗时（小时）'].sum().reset_index()
         t1.rename(columns={'耗时（小时）':'项目工时'}, inplace=True)
-        t1['人员类型'] = t1['人员'].apply(lambda x: '实施交付部' if str(x).strip() == manager_name else '实施交付部云交付小组')
+        # ⚠️ 回退为硬编码
+        t1['人员类型'] = t1['人员'].apply(lambda x: '实施交付部' if str(x).strip() == '黄毅兵' else '实施交付部云交付小组')
         t1['备注'] = ''
         t1.insert(0, '序号', range(1, len(t1)+1))
         t1 = t1[['序号', '人员', '人员类型', '项目工时', '备注']]
@@ -488,7 +489,8 @@ class UIComponents:
             if 'params' not in st.session_state:
                 st.session_state.params = {
                     'price': 1500, 'hours_limit': 100, 'sub_tag': "差旅补助", 
-                    'period': "2025年第三季度", 'manager': "黄毅兵"
+                    'period': "2025年第三季度"
+                    # ⚠️ 移除了 manager 参数
                 }
 
             st.session_state.params['price'] = st.number_input("人力单价 (元/天)", value=st.session_state.params['price'], step=100)
@@ -496,7 +498,8 @@ class UIComponents:
             st.session_state.params['hours_limit'] = st.number_input("工时阈值 (小时)", value=st.session_state.params['hours_limit'])
             st.session_state.params['sub_tag'] = st.text_input("补助关键词", value=st.session_state.params['sub_tag'])
             st.session_state.params['period'] = st.text_input("结算周期文案", value=st.session_state.params['period'])
-            st.session_state.params['manager'] = st.text_input("部门负责人 (用于分类)", value=st.session_state.params['manager'])
+            
+            # ⚠️ 移除了负责人输入框
             
             current_params = st.session_state.params.copy()
             last_run_params = st.session_state.get('last_run_params', None)
@@ -695,8 +698,8 @@ if st.session_state.page == 'main':
                     st.session_state.last_run_params = current_params.copy()
                     st.rerun()
                 else:
-                    # 1. 计算
-                    res = DataEngine.calculate(df_a, df_b, st.session_state.mapping_config, current_params['price'], current_params['sub_tag'], current_params['manager'])
+                    # 1. 计算 (⚠️ 不传 manager 参数了)
+                    res = DataEngine.calculate(df_a, df_b, st.session_state.mapping_config, current_params['price'], current_params['sub_tag'])
                     
                     # 2. 总额稽核 (Balance Check)
                     st.session_state.balance_check = DataEngine.verify_balance(
