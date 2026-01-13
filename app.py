@@ -730,6 +730,8 @@ elif st.session_state.page == 'mapping':
         if c2.button("⬅️", key="back_from_prank", type="tertiary", use_container_width=True): st.session_state.page = 'main'; st.rerun()
         st.markdown("""<style>.prank-container { display: flex; justify-content: center; margin-top: 150px; } .prank-text { font-size: 2.5rem; color: #30363d; font-family: 'Courier New', monospace; cursor: default; } a.prank-link { text-decoration: none; color: inherit; cursor: text; } a.prank-link:hover { color: inherit; text-decoration: none; }</style><div class="prank-container"><span class="prank-text">你以为有什么<a href="?prank=1" target="_self" class="prank-link">？</a></span></div>""", unsafe_allow_html=True)
     else:
+        # Added this line to fix the NameError
+        all_templates = TemplateManager.get_all_names() 
         with st.sidebar:
             st.header("📏 规则模板管理")
             st.divider()
