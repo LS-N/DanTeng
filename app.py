@@ -84,6 +84,19 @@ def inject_css():
         .balance-box-ok { border: 1px solid #238636; background-color: rgba(35, 134, 54, 0.1); padding: 10px; border-radius: 6px; margin-bottom: 15px; color: #3fb950; }
         .balance-box-err { border: 1px solid #da3633; background-color: rgba(218, 54, 51, 0.1); padding: 10px; border-radius: 6px; margin-bottom: 15px; color: #f85149; font-weight: bold;}
 
+        /* === 恶作剧彩蛋样式 === */
+        .prank-text {
+            text-align: center;
+            font-size: 2.5rem;
+            color: #484f58; /* 很暗的灰色，像背景一样 */
+            margin-top: 150px;
+            font-family: 'Courier New', monospace;
+        }
+        .prank-hint {
+            color: #21262d; /* 几乎看不见的颜色 */
+            font-size: 0.8rem;
+        }
+        
     </style>
     """, unsafe_allow_html=True)
 
@@ -614,6 +627,8 @@ class UIComponents:
             st.markdown("---")
             if st.button("🐱 字段映射 & 逻辑"):
                 st.session_state.page = 'mapping'
+                # 重置恶作剧状态，确保每次点击都触发
+                st.session_state.prank_solved = False
                 st.rerun()
                 
             return current_params, trigger_recalc
@@ -872,34 +887,49 @@ if st.session_state.page == 'main':
         )
 
 elif st.session_state.page == 'mapping':
-    c1, c2 = st.columns([9, 1])
-    c1.markdown("<div class='nav-header'>🐱 字段映射 & 逻辑配置</div>", unsafe_allow_html=True)
-    if c2.button("⬅️", use_container_width=True): 
-        st.session_state.page = 'main'
-        st.rerun()
-    st.markdown("<hr style='margin-top:0; border-color:#30363d;'>", unsafe_allow_html=True)
-    c_action = st.columns([7, 1, 2])[2]
-    
-    has_files = st.session_state.data_store['A']['df'] is not None and st.session_state.data_store['B']['df'] is not None
-    with c_action:
-        if not st.session_state.is_editing_mapping:
-            if st.button("✏️ 编辑配置", type="primary", use_container_width=True):
-                if not has_files: st.toast("请先在主页上传 A/B 表", icon="🚫")
-                else:
-                    st.session_state.is_editing_mapping = True
-                    st.rerun()
-        else:
-            if st.button("💾 保存生效", type="primary", use_container_width=True):
-                st.session_state.is_editing_mapping = False
-                st.session_state.is_calculated = False
-                st.session_state.error_report = None
-                st.session_state.last_run_params = None
-                st.rerun()
+    # === 恶作剧彩蛋逻辑 ===
+    if 'prank_solved' not in st.session_state:
+        st.session_state.prank_solved = False
 
-    df_c = st.session_state.mapping_config
-    t1, t2, t3 = st.tabs(["结果表3 (底表)", "结果表2 (结算)", "结果表1 (工时)"])
-    cols_a = list(st.session_state.data_store['A']['df'].columns) if has_files else []
-    cols_b = list(st.session_state.data_store['B']['df'].columns) if has_files else []
-    with t1: UIComponents.render_native_editor("全量明细底表", df_c[df_c['所属表']=='结果表3'], st.session_state.is_editing_mapping, cols_a, cols_b)
-    with t2: UIComponents.render_native_editor("结算汇总表", df_c[df_c['所属表']=='结果表2'], st.session_state.is_editing_mapping, cols_a, cols_b)
-    with t3: UIComponents.render_native_editor("工时统计表", df_c[df_c['所属表']=='结果表1'], st.session_state.is_editing_mapping, cols_a, cols_b)
+    if not st.session_state.prank_solved:
+        # 恶作剧界面
+        st.markdown("<div class='prank-text'>你以为有什么？</div>", unsafe_allow_html=True)
+        col1, col2, col3 = st.columns([10, 1, 10])
+        with col2:
+            # 隐藏的触发按钮
+            if st.button("？", type="tertiary"): 
+                st.session_state.prank_solved = True
+                st.rerun()
+    else:
+        # 真正的映射页面内容
+        c1, c2 = st.columns([9, 1])
+        c1.markdown("<div class='nav-header'>🐱 字段映射 & 逻辑配置</div>", unsafe_allow_html=True)
+        if c2.button("⬅️", use_container_width=True): 
+            st.session_state.page = 'main'
+            st.rerun()
+        st.markdown("<hr style='margin-top:0; border-color:#30363d;'>", unsafe_allow_html=True)
+        c_action = st.columns([7, 1, 2])[2]
+        
+        has_files = st.session_state.data_store['A']['df'] is not None and st.session_state.data_store['B']['df'] is not None
+        with c_action:
+            if not st.session_state.is_editing_mapping:
+                if st.button("✏️ 编辑配置", type="primary", use_container_width=True):
+                    if not has_files: st.toast("请先在主页上传 A/B 表", icon="🚫")
+                    else:
+                        st.session_state.is_editing_mapping = True
+                        st.rerun()
+            else:
+                if st.button("💾 保存生效", type="primary", use_container_width=True):
+                    st.session_state.is_editing_mapping = False
+                    st.session_state.is_calculated = False
+                    st.session_state.error_report = None
+                    st.session_state.last_run_params = None
+                    st.rerun()
+
+        df_c = st.session_state.mapping_config
+        t1, t2, t3 = st.tabs(["结果表3 (底表)", "结果表2 (结算)", "结果表1 (工时)"])
+        cols_a = list(st.session_state.data_store['A']['df'].columns) if has_files else []
+        cols_b = list(st.session_state.data_store['B']['df'].columns) if has_files else []
+        with t1: UIComponents.render_native_editor("全量明细底表", df_c[df_c['所属表']=='结果表3'], st.session_state.is_editing_mapping, cols_a, cols_b)
+        with t2: UIComponents.render_native_editor("结算汇总表", df_c[df_c['所属表']=='结果表2'], st.session_state.is_editing_mapping, cols_a, cols_b)
+        with t3: UIComponents.render_native_editor("工时统计表", df_c[df_c['所属表']=='结果表1'], st.session_state.is_editing_mapping, cols_a, cols_b)
