@@ -71,6 +71,16 @@ def inject_css():
         .error-box { border: 1px solid #ff7b72; background-color: rgba(255, 123, 114, 0.1); padding: 15px; border-radius: 6px; margin-bottom: 15px; }
         .balance-box-ok { border: 1px solid #238636; background-color: rgba(35, 134, 54, 0.1); padding: 10px; border-radius: 6px; margin-bottom: 15px; color: #3fb950; }
         .balance-box-err { border: 1px solid #da3633; background-color: rgba(218, 54, 51, 0.1); padding: 10px; border-radius: 6px; margin-bottom: 15px; color: #f85149; font-weight: bold;}
+
+        /* --- 新增：强制让 Selectbox 内容居中 --- */
+        div[data-baseweb="select"] > div {
+            justify-content: center !important;
+            text-align: center !important;
+        }
+        div[data-baseweb="select"] span {
+            width: 100%;
+            text-align: center;
+        }
     </style>
     """, unsafe_allow_html=True)
 
@@ -644,18 +654,25 @@ if st.session_state.page == 'main':
         st.markdown("### 📂 数据源控制台")
         st.divider()
         
-        # --- NEW LOCATION FOR TEMPLATE SELECTOR (Centered) ---
+        # --- NEW LOCATION FOR TEMPLATE SELECTOR (Below Title) ---
         all_templates = TemplateManager.get_all_names()
         if st.session_state.active_template_name not in all_templates: 
             st.session_state.active_template_name = TemplateManager.DEFAULT_NAME
-            
-        _, c_center, _ = st.columns([1, 2, 1])
-        with c_center:
-            selected_tpl = st.selectbox("计算规则模板", options=all_templates, index=all_templates.index(st.session_state.active_template_name), key="main_template_selector", label_visibility="collapsed")
+        
+        # 使用 1.5 : 8.5 的比例，模拟约 8 个字符宽度的视觉效果
+        c_sel, c_empty = st.columns([1.5, 8.5])
+        with c_sel:
+            selected_tpl = st.selectbox(
+                "计算规则模板", 
+                options=all_templates, 
+                index=all_templates.index(st.session_state.active_template_name), 
+                key="main_template_selector", 
+                label_visibility="collapsed"
+            )
             
         if selected_tpl != st.session_state.active_template_name:
             st.session_state.active_template_name = selected_tpl; st.session_state.is_calculated = False; st.rerun()
-        # -----------------------------------------------------
+        # --------------------------------------------------------
 
         c1, c2 = st.columns(2)
         with c1: UIComponents.render_file_slot('A', "Source A: 投入明细 (工时)", st.session_state.data_store)
