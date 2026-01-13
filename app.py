@@ -551,7 +551,7 @@ class UIComponents:
                         c_b.download_button("下载", fbytes, fname, key=f"btn_{fname}")
 
     @staticmethod
-    def render_native_editor(desc, subset, is_readonly, cols_a, cols_b):
+    def render_native_editor(desc, subset, is_readonly, all_options, disable_match_field_column=False):
         if subset.empty: return None
         column_config = {
             "序号": st.column_config.TextColumn("序号", width="small", disabled=True),
@@ -563,29 +563,12 @@ class UIComponents:
             column_config["匹配字段"] = st.column_config.TextColumn("匹配字段", disabled=True)
         else:
             column_config["源表"] = st.column_config.TextColumn("源表", disabled=True)
-            # 动态设置匹配字段的编辑状态和选项
-            def get_match_field_options(row):
-                source_table = row["源表"]
-                if source_table == "Source A":
-                    return cols_a
-                elif source_table == "Source B":
-                    return cols_b
-                return []
-
-            def is_match_field_disabled(row):
-                source_table = row["源表"]
-                if source_table == "Source A":
-                    return not bool(cols_a)
-                elif source_table == "Source B":
-                    return not bool(cols_b)
-                return True # 对于非 Source A/B 的源表，默认禁用
-
             column_config["匹配字段"] = st.column_config.SelectboxColumn(
                 "匹配字段",
-                options=get_match_field_options,
+                options=all_options,
                 width="medium",
                 required=True,
-                disabled=is_match_field_disabled
+                disabled=disable_match_field_column
             )
         
         calc_height = (len(subset) + 1) * 35 + 10; final_height = max(150, min(1000, calc_height))
@@ -797,14 +780,16 @@ elif st.session_state.page == 'mapping':
         merged_options = cols_a + cols_b
         
         with t1: 
-            edited_t3 = UIComponents.render_native_editor("全量明细底表", df_c[df_c["所属表"]=="结果表3"], is_default, cols_a, cols_b)
+            # 判断是否禁用匹配字段整列
+            disable_match_field_col = not (bool(cols_a) or bool(cols_b))
+            edited_t3 = UIComponents.render_native_editor("全量明细底表", df_c[df_c["所属表"]=="结果表3"], is_default, merged_options, disable_match_field_col)
             if not is_default and edited_t3 is not None: save_and_validate(edited_t3)
         with t2: 
             st.info("ℹ️ 结果表 2 为衍生汇总表，规则由系统锁定。")
-            UIComponents.render_native_editor("结算汇总表", df_c[df_c["所属表"]=="结果表2"], True, [], [])
+            UIComponents.render_native_editor("结算汇总表", df_c[df_c["所属表"]=="结果表2"], True, [], True)
         with t3: 
             st.info("ℹ️ 结果表 1 为衍生工时表，规则由系统锁定。")
-            UIComponents.render_native_editor("工时统计表", df_c[df_c["所属表"]=="结果表1"], True, [], [])
+            UIComponents.render_native_editor("工时统计表", df_c[df_c["所属表"]=="结果表1"], True, [], True)
 
         if not is_default:
             st.markdown("<div class='action-btn-zone'></div>", unsafe_allow_html=True)
