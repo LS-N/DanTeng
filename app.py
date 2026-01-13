@@ -572,8 +572,8 @@ class UIComponents:
             )
         
         calc_height = (len(subset) + 1) * 35 + 10; final_height = max(150, min(1000, calc_height))
-        # 核心修复：引入版本号，当校验失败时通过改变 key 强制销毁并重建组件
-        editor_key = f"editor_{subset.iloc[0]['所属表']}_{st.session_state.editing_template_name}_v{st.session_state.editor_version}"
+        # 核心修复：引入 desc 和版本号，确保 key 的唯一性，防止拆分编辑器后出现 Duplicate Key 报错
+        editor_key = f"editor_{desc}_{subset.iloc[0]['所属表']}_{st.session_state.editing_template_name}_v{st.session_state.editor_version}"
         st.markdown(f"**{desc}**")
         return st.data_editor(subset, column_config=column_config, use_container_width=True, hide_index=True, height=final_height, key=editor_key, disabled=is_readonly)
 
