@@ -24,7 +24,7 @@ from openpyxl.styles import Border, Side, Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 # ==============================================================================
-# Zone 0: 全局配置 & 样式注入 (CSS 深度修复版)
+# Zone 0: 全局配置 & 样式注入
 # ==============================================================================
 st.set_page_config(page_title="淡藤财务报表 Pro", page_icon="😈", layout="wide", initial_sidebar_state="expanded")
 
@@ -88,7 +88,7 @@ def inject_css():
     """, unsafe_allow_html=True)
 
 # ==============================================================================
-# Zone A: 纯逻辑层 (包含 T4 校验与空白页修复)
+# Zone A: 纯逻辑层 (包含 T4 校验、空白页修复、Excel表头插入)
 # ==============================================================================
 class DataEngine:
     @staticmethod
@@ -344,21 +344,51 @@ class DataEngine:
             return False, " | ".join(messages)
 
     @staticmethod
-    def to_bytes(df):
+    def to_bytes(df, title=None):
+        """
+        导出 DataFrame 到 Excel 字节流
+        :param title: 如果提供，将在第一行插入合并单元格作为标题
+        """
         b = io.BytesIO()
         out = df.drop(columns=['_sys_id'], errors='ignore')
+        
+        # 如果有标题，数据从第二行开始写 (startrow=1 -> Excel Row 2)
+        start_row = 1 if title else 0
+        
         with pd.ExcelWriter(b, engine='openpyxl') as writer:
-            out.to_excel(writer, index=False, sheet_name='Sheet1')
+            out.to_excel(writer, index=False, sheet_name='Sheet1', startrow=start_row)
             worksheet = writer.sheets['Sheet1']
+            
             thin = Side(border_style="thin", color="000000")
             border = Border(top=thin, left=thin, right=thin, bottom=thin)
             align_center = Alignment(horizontal='center', vertical='center', wrap_text=False)
             header_font = Font(bold=True)
-            for row in worksheet.iter_rows(min_row=1, max_row=len(out)+1, min_col=1, max_col=len(out.columns)):
+            
+            # 计算样式应用范围
+            max_r = len(out) + 1 + start_row
+            max_c = len(out.columns)
+            
+            for row in worksheet.iter_rows(min_row=1, max_row=max_r, min_col=1, max_col=max_c):
                 for cell in row:
                     cell.border = border
                     cell.alignment = align_center
-                    if cell.row == 1: cell.font = header_font
+                    # 原本的 Header 是第1行，如果有标题，Header 变成了第2行 (start_row + 1)
+                    if cell.row == (start_row + 1): 
+                        cell.font = header_font
+            
+            # 插入标题逻辑
+            if title:
+                # 合并第一行的所有列
+                worksheet.merge_cells(start_row=1, start_column=1, end_row=1, end_column=max_c)
+                title_cell = worksheet.cell(row=1, column=1)
+                title_cell.value = title
+                # 设置大标题样式
+                title_cell.font = Font(name='SimSun', bold=True, size=18)
+                title_cell.alignment = Alignment(horizontal='center', vertical='center')
+                # 调整标题行高
+                worksheet.row_dimensions[1].height = 30
+
+            # 自动调整列宽
             for i, col in enumerate(out.columns):
                 max_len = 0
                 try: max_len = len(str(col).encode('gbk'))
@@ -370,6 +400,7 @@ class DataEngine:
                     if v_len > max_len: max_len = v_len
                 adjusted_width = min((max_len + 2) * 1.1, 60) 
                 worksheet.column_dimensions[get_column_letter(i + 1)].width = adjusted_width
+                
         return b.getvalue()
 
 class WordGenerator:
@@ -793,10 +824,14 @@ if st.session_state.page == 'main':
                         df_a, df_b, res, st.session_state.mapping_config
                     )
                     
-                    # 3. 结果生成
+                    # 3. 结果生成 (修复点：为 T2 生成动态标题)
+                    q_str = DataEngine.get_quarter_str(current_params['period'])
+                    # 提取年份后两位和季度 (例如 2025Q4 -> 25Q4)
+                    t2_title = f"{q_str[2:]}实施交付部项目投入考核调整总表"
+                    
                     excel_files_dict = {
                         "t1": DataEngine.to_bytes(res['t1']),
-                        "t2": DataEngine.to_bytes(res['t2']),
+                        "t2": DataEngine.to_bytes(res['t2'], title=t2_title), # 传入动态标题
                         "t3": DataEngine.to_bytes(res['t3'])
                     }
                     st.session_state.result_files = excel_files_dict
@@ -805,7 +840,7 @@ if st.session_state.page == 'main':
                     st.session_state.word_files = word_files_dict
                     
                     all_files_to_zip = {}
-                    q_str = DataEngine.get_quarter_str(current_params['period'])
+                    
                     all_files_to_zip[f"实施交付部项目情况汇总_部门工时统计-{q_str}.xlsx"] = excel_files_dict['t1']
                     all_files_to_zip[f"{q_str}实施交付部项目投入考核调整总表.xlsx"] = excel_files_dict['t2']
                     all_files_to_zip[f"实施交付部项目情况汇总_结算工时总表-{q_str}.xlsx"] = excel_files_dict['t3']
