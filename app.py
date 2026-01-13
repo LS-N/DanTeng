@@ -72,7 +72,7 @@ def inject_css():
         .balance-box-ok { border: 1px solid #238636; background-color: rgba(35, 134, 54, 0.1); padding: 10px; border-radius: 6px; margin-bottom: 15px; color: #3fb950; }
         .balance-box-err { border: 1px solid #da3633; background-color: rgba(218, 54, 51, 0.1); padding: 10px; border-radius: 6px; margin-bottom: 15px; color: #f85149; font-weight: bold;}
 
-        /* --- 新增：强制让 Selectbox 内容居中 --- */
+        /* --- 强制让 Selectbox 内容居中 --- */
         div[data-baseweb="select"] > div {
             justify-content: center !important;
             text-align: center !important;
@@ -750,9 +750,11 @@ elif st.session_state.page == 'mapping':
                 if st.button(tpl_name, key=f"btn_edit_{tpl_name}", type=btn_type, use_container_width=True):
                     st.session_state.editing_template_name = tpl_name; st.session_state.sample_store = {'A': None, 'B': None}; st.rerun()
             st.divider()
-            with st.popover("➕ 新建模板", use_container_width=True):
+            
+            # --- UI OPTIMIZATION: Use expander instead of popover to ensure width consistency ---
+            with st.expander("➕ 新建模板", expanded=False):
                 new_tpl_name = st.text_input("模板名称", placeholder="1-8个字符", max_chars=8)
-                if st.button("创建", use_container_width=True):
+                if st.button("创建", key="create_new_tpl", use_container_width=True):
                     if new_tpl_name and new_tpl_name not in st.session_state.templates:
                         if 1 <= len(new_tpl_name) <= 8:
                             TemplateManager.save_template(new_tpl_name, DataEngine.get_default_config().copy())
@@ -760,6 +762,7 @@ elif st.session_state.page == 'mapping':
                             st.success(f"模板 {new_tpl_name} 已创建"); time.sleep(0.5); st.rerun()
                         else: st.error("长度需在1-8字符之间")
                     elif new_tpl_name: st.error("名称已存在")
+            # -----------------------------------------------------------------------------------
 
         c1, c2 = st.columns([8, 2], vertical_alignment="center")
         c1.markdown(f"<div class='nav-header'>📏 正在编辑: {st.session_state.editing_template_name}</div>", unsafe_allow_html=True)
