@@ -78,7 +78,7 @@ def inject_css():
 # Zone A: 纯逻辑层
 # ==============================================================================
 class TemplateManager:
-    DEFAULT_NAME = "系统默认模板 (Default)"
+    DEFAULT_NAME = "默认模板"
 
     @staticmethod
     def init_defaults():
@@ -90,6 +90,14 @@ class TemplateManager:
             st.session_state.active_template_name = TemplateManager.DEFAULT_NAME
         if 'editing_template_name' not in st.session_state:
             st.session_state.editing_template_name = TemplateManager.DEFAULT_NAME
+        # Ensure params exist
+        if 'params' not in st.session_state:
+             st.session_state.params = {
+                'price': 1600, 
+                'hours_limit': 100, 
+                'sub_tag': '差旅补助', 
+                'period': '2025Q1'
+             }
 
     @staticmethod
     def get_template(name):
@@ -387,7 +395,7 @@ class WordGenerator:
         trHeight.set(qn('w:val'), str(int(height_cm * 567))); trHeight.set(qn('w:hRule'), "atLeast"); trPr.append(trHeight)
 
     @staticmethod
-    def create_hardcoded_template(purchase_comp, sales_comp, dept_name, period_text):
+    def _create_base_doc(purchase_comp, sales_comp, dept_name, period_text):
         doc = docx.Document()
         section = doc.sections[0]
         section.top_margin = Cm(2.0); section.bottom_margin = Cm(2.0)
@@ -438,36 +446,91 @@ class WordGenerator:
             for idx, width in enumerate(t1_widths): row.cells[idx].width = Cm(width)
         headers_1 = ['人员', '人事\n范围', '项目\n名称', '合同\n名称', '销售\n人员', '销售所\n在大区', '支持\n人天', '人力\n费用', '差旅\n补助', '差旅平\n台费用', '总费用\n（元）']
         for i, text in enumerate(headers_1): WordGenerator.set_cell_style(table1.rows[0].cells[i], text)
-        last_p = doc.add_paragraph(); p_fmt = last_p.paragraph_format
-        p_fmt.space_before = Pt(0); p_fmt.space_after = Pt(0); p_fmt.line_spacing = Pt(0); p_fmt.line_spacing_rule = WD_LINE_SPACING.EXACTLY
-        last_p.add_run().font.size = Pt(0)
-        out = io.BytesIO(); doc.save(out)
-        safe_dept = str(dept_name).replace('/', '_').replace('\\', '_')
-        fname = f"结算单_{purchase_comp}_{sales_comp}_{safe_dept}.docx"
-        output_files[fname] = out.getvalue()
-        return output_files, None
+        return doc, table0, table1
+
+    @staticmethod
+    def generate(df_t3, period_str):
+        if not HAS_DOCX:
+            return {}, "缺少 python-docx 库，无法生成 Word 文件"
+        if df_t3 is None or df_t3.empty:
+            return {}, "数据为空"
+            
+        # Group by Contract (Purchase), Range (Sales), Dept
+        # Required columns must exist in T3
+        req = ['合同主体', '人事范围', '销售部门']
+        if not all(c in df_t3.columns for c in req):
+            return {}, f"Result T3 缺少必要的列: {req}"
+
+        files_dict = {}
+        grouped = df_t3.groupby(req)
+
+        for (purch_comp, sales_comp, dept_name), group in grouped:
+            doc, table0, table1 = WordGenerator._create_base_doc(purch_comp, sales_comp, dept_name, period_str)
+            
+            # Fill Table 1 (Details)
+            # Map columns: ['序号','人员','所属项目','人事范围','SPM','合同主体','销售人员','销售部门','差旅补助','差旅费控平台','耗时（小时）','支持时间（人天）','人力费用','结算费用合计']
+            for _, row in group.iterrows():
+                cells = table1.add_row().cells
+                # Row mapping
+                WordGenerator.set_cell_style(cells[0], row['人员'])
+                WordGenerator.set_cell_style(cells[1], row['人事范围'])
+                WordGenerator.set_cell_style(cells[2], row['所属项目'])
+                WordGenerator.set_cell_style(cells[3], row['合同主体'])
+                WordGenerator.set_cell_style(cells[4], row['销售人员'])
+                WordGenerator.set_cell_style(cells[5], row['销售部门']) # Use Dept as Region for now
+                WordGenerator.set_cell_style(cells[6], f"{row['支持时间（人天）']:.2f}")
+                WordGenerator.set_cell_style(cells[7], f"{row['人力费用']:.2f}")
+                WordGenerator.set_cell_style(cells[8], f"{row['差旅补助']:.2f}")
+                WordGenerator.set_cell_style(cells[9], f"{row['差旅费控平台']:.2f}")
+                WordGenerator.set_cell_style(cells[10], f"{row['结算费用合计']:.2f}")
+
+            # Calculate Totals for Table 0 (Summary)
+            sum_days = group['支持时间（人天）'].sum()
+            sum_man_cost = group['人力费用'].sum()
+            sum_travel = group['差旅补助'].sum() + group['差旅费控平台'].sum()
+            total_cost = group['结算费用合计'].sum()
+            
+            # Fill Summary Row (Row index 3 in table0)
+            # Cells: 0=StdProj, 1=DataGov, 2=Ops, 3=StdCost, 4=DataCost, 5=OpsCost, 6=Sub, 7=Fee, 8=Work, 9=Total
+            # Simplified logic: Put all days in 'Standard Project' (0) and cost in (3) for now, unless we distinguish project types
+            # Based on headers, it seems we might need project type logic. For now, aggregate all into first column to be safe.
+            
+            # Assuming all are standard delivery for now
+            WordGenerator.set_cell_style(table0.rows[3].cells[0], f"{sum_days:.2f}") # Days
+            WordGenerator.set_cell_style(table0.rows[3].cells[1], "-")
+            WordGenerator.set_cell_style(table0.rows[3].cells[2], "-")
+            
+            WordGenerator.set_cell_style(table0.rows[3].cells[3], f"{sum_man_cost:.2f}") # Man Cost
+            WordGenerator.set_cell_style(table0.rows[3].cells[4], "-")
+            WordGenerator.set_cell_style(table0.rows[3].cells[5], "-")
+            
+            WordGenerator.set_cell_style(table0.rows[3].cells[6], f"{group['差旅补助'].sum():.2f}")
+            WordGenerator.set_cell_style(table0.rows[3].cells[7], f"{group['差旅费控平台'].sum():.2f}")
+            
+            WordGenerator.set_cell_style(table0.rows[3].cells[8], f"{sum_days:.2f}") # Total Days
+            WordGenerator.set_cell_style(table0.rows[3].cells[9], f"{total_cost:.2f}") # Grand Total
+
+            # Save
+            out = io.BytesIO()
+            doc.save(out)
+            safe_dept = str(dept_name).replace('/', '_').replace('\\', '_')
+            fname = f"结算单_{purch_comp}_{sales_comp}_{safe_dept}.docx"
+            files_dict[fname] = out.getvalue()
+            
+        return files_dict, None
 
 # ==============================================================================
 # Zone B: UI 组件层
 # ==============================================================================
 class UIComponents:
     @staticmethod
-    def render_sidebar(has_error):
+    def render_sidebar(threshold_error_flag):
         with st.sidebar:
-            st.header("⚙️ 参数配置")
-            if 'params' not in st.session_state:
-                st.session_state.params = { 'price': 1500, 'hours_limit': 100, 'sub_tag': "差旅补助", 'period': "2025年第三季度" }
-
-            st.markdown("<div class='sidebar-label'>⚡ 当前生效计算模板</div>", unsafe_allow_html=True)
-            all_templates = TemplateManager.get_all_names()
-            if st.session_state.active_template_name not in all_templates: st.session_state.active_template_name = TemplateManager.DEFAULT_NAME
-            selected_active = st.selectbox("Active", options=all_templates, index=all_templates.index(st.session_state.active_template_name), key="sidebar_active_selector", label_visibility="collapsed")
-            if selected_active != st.session_state.active_template_name:
-                st.session_state.active_template_name = selected_active; st.session_state.is_calculated = False; st.rerun()
+            st.markdown("<div class='nav-header'>⚙️ 参数配置</div>", unsafe_allow_html=True)
             st.divider()
             
             st.session_state.params['price'] = st.number_input("人力单价 (元/天)", value=st.session_state.params['price'], step=100)
-            if has_error: st.error("🚨 请调整工时", icon=None)
+            if threshold_error_flag: st.error("🚨 请调整工时", icon=None)
             st.session_state.params['hours_limit'] = st.number_input("工时阈值 (小时)", value=st.session_state.params['hours_limit'])
             st.session_state.params['sub_tag'] = st.text_input("补助关键词", value=st.session_state.params['sub_tag'])
             st.session_state.params['period'] = st.text_input("结算周期文案", value=st.session_state.params['period'])
@@ -552,10 +615,6 @@ class UIComponents:
 
     @staticmethod
     def render_native_editor(desc, subset, is_readonly, all_options):
-        """
-        渲染精简版编辑器。由于采用了物理隔离方案，
-        下拉选项在传入前已过滤，无需在组件内部进行复杂的动态禁用。
-        """
         if subset.empty: return None
         
         column_config = {
@@ -573,7 +632,6 @@ class UIComponents:
             )
         
         calc_height = (len(subset) + 1) * 35 + 10
-        # 使用 desc 确保 key 唯一，防止 Duplicate Key 报错
         editor_key = f"editor_{desc}_{subset.iloc[0]['所属表']}_{st.session_state.editing_template_name}"
         st.markdown(f"**{desc}**")
         return st.data_editor(subset, column_config=column_config, use_container_width=True, hide_index=True, height=max(150, min(1000, calc_height)), key=editor_key, disabled=is_readonly)
@@ -592,7 +650,6 @@ if 'last_run_params' not in st.session_state: st.session_state.last_run_params =
 if 'threshold_error_flag' not in st.session_state: st.session_state.threshold_error_flag = False
 if 'balance_check' not in st.session_state: st.session_state.balance_check = (True, "")
 if 'sample_store' not in st.session_state: st.session_state.sample_store = {'A': None, 'B': None}
-# if 'editor_version' not in st.session_state: st.session_state.editor_version = 0 # 物理隔离后不再需要强制刷新版本号
 
 TemplateManager.init_defaults()
 inject_css()
@@ -601,20 +658,22 @@ if st.session_state.page == 'main':
     current_params, manual_recalc = UIComponents.render_sidebar(st.session_state.threshold_error_flag)
     st.title("😈 淡藤财务报表 Pro")
     with st.container(border=True):
-        c_h1, c_h2 = st.columns([0.7, 0.3], vertical_alignment="bottom")
-        c_h1.markdown("### 📂 数据源控制台")
-        all_templates = TemplateManager.get_all_names()
-        if st.session_state.active_template_name not in all_templates: st.session_state.active_template_name = TemplateManager.DEFAULT_NAME
-        selected_tpl = c_h2.selectbox("选择计算规则模板", options=all_templates, index=all_templates.index(st.session_state.active_template_name), key="main_template_selector")
-        if selected_tpl != st.session_state.active_template_name:
-            st.session_state.active_template_name = selected_tpl; st.session_state.is_calculated = False; st.rerun()
+        st.markdown("### 📂 数据源控制台")
         st.divider()
         c1, c2 = st.columns(2)
         with c1: UIComponents.render_file_slot('A', "Source A: 投入明细 (工时)", st.session_state.data_store)
         with c2: UIComponents.render_file_slot('B', "Source B: 差旅明细 (费用)", st.session_state.data_store)
-        if st.button("🗑️ 清空所有文件", type="secondary", use_container_width=True): 
+        
+        bc1, bc2 = st.columns([0.8, 0.2], vertical_alignment="bottom")
+        if bc1.button("🗑️ 清空所有文件", type="secondary", use_container_width=True): 
             st.session_state.data_store = {'A': {'df': None, 'name': None}, 'B': {'df': None, 'name': None}}
             st.session_state.is_calculated = False; st.session_state.error_report = None; st.session_state.all_zip = None; st.session_state.last_run_params = None; st.rerun()
+        
+        all_templates = TemplateManager.get_all_names()
+        if st.session_state.active_template_name not in all_templates: st.session_state.active_template_name = TemplateManager.DEFAULT_NAME
+        selected_tpl = bc2.selectbox("计算规则模板", options=all_templates, index=all_templates.index(st.session_state.active_template_name), key="main_template_selector", label_visibility="collapsed")
+        if selected_tpl != st.session_state.active_template_name:
+            st.session_state.active_template_name = selected_tpl; st.session_state.is_calculated = False; st.rerun()
     st.divider()
     
     has_files = st.session_state.data_store['A']['df'] is not None and st.session_state.data_store['B']['df'] is not None
@@ -673,11 +732,6 @@ elif st.session_state.page == 'mapping':
     else:
         with st.sidebar:
             st.header("📏 规则模板管理")
-            st.markdown("<div class='sidebar-label'>⚡ 当前生效计算模板</div>", unsafe_allow_html=True)
-            all_templates = TemplateManager.get_all_names()
-            if st.session_state.active_template_name not in all_templates: st.session_state.active_template_name = TemplateManager.DEFAULT_NAME
-            selected_active = st.selectbox("Active", options=all_templates, index=all_templates.index(st.session_state.active_template_name), key="mapping_sidebar_active", label_visibility="collapsed")
-            if selected_active != st.session_state.active_template_name: st.session_state.active_template_name = selected_active
             st.divider()
             st.markdown("<div class='sidebar-label'>📝 模板列表 (点击编辑)</div>", unsafe_allow_html=True)
             for tpl_name in all_templates:
@@ -686,12 +740,14 @@ elif st.session_state.page == 'mapping':
                     st.session_state.editing_template_name = tpl_name; st.session_state.sample_store = {'A': None, 'B': None}; st.rerun()
             st.divider()
             with st.popover("➕ 新建模板", use_container_width=True):
-                new_tpl_name = st.text_input("模板名称", placeholder="例如: 2025新规则")
+                new_tpl_name = st.text_input("模板名称", placeholder="1-8个字符", max_chars=8)
                 if st.button("创建", use_container_width=True):
                     if new_tpl_name and new_tpl_name not in st.session_state.templates:
-                        TemplateManager.save_template(new_tpl_name, DataEngine.get_default_config().copy())
-                        st.session_state.editing_template_name = new_tpl_name; st.session_state.sample_store = {'A': None, 'B': None}
-                        st.success(f"模板 {new_tpl_name} 已创建"); time.sleep(0.5); st.rerun()
+                        if 1 <= len(new_tpl_name) <= 8:
+                            TemplateManager.save_template(new_tpl_name, DataEngine.get_default_config().copy())
+                            st.session_state.editing_template_name = new_tpl_name; st.session_state.sample_store = {'A': None, 'B': None}
+                            st.success(f"模板 {new_tpl_name} 已创建"); time.sleep(0.5); st.rerun()
+                        else: st.error("长度需在1-8字符之间")
                     elif new_tpl_name: st.error("名称已存在")
 
         c1, c2 = st.columns([8, 2], vertical_alignment="center")
@@ -728,10 +784,6 @@ elif st.session_state.page == 'mapping':
         df_c = st.session_state.templates[st.session_state.editing_template_name]
         
         def save_and_validate(edited_df):
-            """
-            精简版保存逻辑。由于 UI 已实现物理隔离，
-            此处仅保留核心的 session_state 更新逻辑。
-            """
             if is_default: return
             current_config = st.session_state.templates[st.session_state.editing_template_name]
             
@@ -748,21 +800,14 @@ elif st.session_state.page == 'mapping':
 
         t1, t2, t3 = st.tabs(["结果表3 (底表)", "结果表2 (结算)", "结果表1 (工时)"])
         
-        # --- 核心修复：根据上传状态动态构建选项，实现 UI 隔离 ---
-        # 只有上传了对应表，其字段才会出现在下拉列表中
         current_options = []
         if cols_a: current_options.extend(cols_a)
         if cols_b: current_options.extend(cols_b)
-        
-        # 移除重复项并保持顺序
         current_options = list(dict.fromkeys(current_options))
         
         with t1: 
             df_t3 = df_c[df_c["所属表"]=="结果表3"]
             
-            # --- 物理拆分方案：彻底解决平台限制 ---
-            
-            # 1. Source A 映射区
             st.markdown("#### 📂 Source A 字段映射 (工时统计)")
             df_a_subset = df_t3[df_t3["源表"] == "Source A"]
             if not cols_a and not is_default:
@@ -774,7 +819,6 @@ elif st.session_state.page == 'mapping':
             
             st.divider()
             
-            # 2. Source B 映射区
             st.markdown("#### 📂 Source B 字段映射 (差旅明细)")
             df_b_subset = df_t3[df_t3["源表"] == "Source B"]
             if not cols_b and not is_default:
@@ -786,7 +830,6 @@ elif st.session_state.page == 'mapping':
             
             st.divider()
             
-            # 3. 系统锁定/公式计算区 (只读)
             st.markdown("#### 🔒 系统锁定/公式计算字段")
             df_lock_subset = df_t3[~df_t3["源表"].isin(["Source A", "Source B"])]
             UIComponents.render_native_editor("系统配置 (只读)", df_lock_subset, True, [])
