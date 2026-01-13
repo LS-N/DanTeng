@@ -551,7 +551,7 @@ class UIComponents:
                         c_b.download_button("下载", fbytes, fname, key=f"btn_{fname}")
 
     @staticmethod
-    def render_native_editor(desc, subset, is_readonly, all_options):
+    def render_native_editor(desc, subset, is_readonly, cols_a, cols_b):
         if subset.empty: return None
         column_config = {
             "序号": st.column_config.TextColumn("序号", width="small", disabled=True),
@@ -563,7 +563,30 @@ class UIComponents:
             column_config["匹配字段"] = st.column_config.TextColumn("匹配字段", disabled=True)
         else:
             column_config["源表"] = st.column_config.TextColumn("源表", disabled=True)
-            column_config["匹配字段"] = st.column_config.SelectboxColumn("匹配字段", options=all_options, width="medium", required=True)
+            # 动态设置匹配字段的编辑状态和选项
+            def get_match_field_options(row):
+                source_table = row["源表"]
+                if source_table == "Source A":
+                    return cols_a
+                elif source_table == "Source B":
+                    return cols_b
+                return []
+
+            def is_match_field_disabled(row):
+                source_table = row["源表"]
+                if source_table == "Source A":
+                    return not bool(cols_a)
+                elif source_table == "Source B":
+                    return not bool(cols_b)
+                return True # 对于非 Source A/B 的源表，默认禁用
+
+            column_config["匹配字段"] = st.column_config.SelectboxColumn(
+                "匹配字段",
+                options=get_match_field_options,
+                width="medium",
+                required=True,
+                disabled=is_match_field_disabled
+            )
         
         calc_height = (len(subset) + 1) * 35 + 10; final_height = max(150, min(1000, calc_height))
         editor_key = f"editor_{subset.iloc[0]['所属表']}_{st.session_state.editing_template_name}"
@@ -720,50 +743,68 @@ elif st.session_state.page == 'mapping':
         
         def save_and_validate(edited_df):
             if is_default: return
+            # 获取当前模板的最新配置副本
             current_config = st.session_state.templates[st.session_state.editing_template_name]
+            
             for idx, row in edited_df.iterrows():
-                target = row['目标字段']; source_table = row['源表']; new_match = str(row['匹配字段']).strip()
+                target = row['目标字段']
+                source_table = row['源表']
+                new_match = str(row['匹配字段']).strip()
                 
-                # --- 核心修复：权限隔离门禁 ---
-                # 1. 检查 A 表修改权限
-                if source_table == 'Source A':
-                    if not cols_a: # 没传 A 表
-                        if new_match != str(current_config.loc[current_config['目标字段']==target, '匹配字段'].values[0]): # 试图修改
-                            st.toast(f"⛔ 禁止修改 [{target}]: 请先上传 'Source A 工时统计' 解锁编辑", icon="🔒"); continue
-                    elif new_match not in cols_a: # 传了表但选错了
-                        st.toast(f"❌ [{target}] 无效字段: '{new_match}' 不在 Source A 中", icon="🚫"); continue
-
-                # 2. 检查 B 表修改权限
-                if source_table == 'Source B':
-                    if not cols_b: # 没传 B 表
-                        if new_match != str(current_config.loc[current_config['目标字段']==target, '匹配字段'].values[0]):
-                            st.toast(f"⛔ 禁止修改 [{target}]: 请先上传 'Source B 差旅明细' 解锁编辑", icon="🔒"); continue
-                    elif new_match not in cols_b:
-                        st.toast(f"❌ [{target}] 无效字段: '{new_match}' 不在 Source B 中", icon="🚫"); continue
-
-                # 3. 防空检查
-                if source_table in ['Source A', 'Source B'] and (not new_match or new_match == 'nan' or new_match == 'None'):
-                    st.toast(f"❌ 字段 [{target}] 不能为空", icon="🚫"); continue 
-                
-                if '🔒' in source_table: continue 
-
+                # 获取该字段在 session_state 中的原始值
                 mask = (current_config['所属表'] == row['所属表']) & (current_config['目标字段'] == target)
-                if mask.any():
-                    orig_idx = current_config[mask].index[0]
-                    st.session_state.templates[st.session_state.editing_template_name].at[orig_idx, '匹配字段'] = new_match
+                if not mask.any(): continue
+                
+                orig_idx = current_config[mask].index[0]
+                old_match = str(current_config.at[orig_idx, '匹配字段']).strip()
+                
+                # 如果没有变化，跳过
+                if new_match == old_match: continue
+
+                # --- 核心门禁逻辑 ---
+                
+                # 门禁一：检查是否上传了对应的数据源
+                if source_table == 'Source A' and not cols_a:
+                    st.error(f"⛔ 驳回修改 [{target}]: 请先上传 'Source A 工时统计' 数据源以解锁编辑权限。")
+                    continue # 驳回，不更新 session_state
+                
+                if source_table == 'Source B' and not cols_b:
+                    st.error(f"⛔ 驳回修改 [{target}]: 请先上传 'Source B 差旅明细' 数据源以解锁编辑权限。")
+                    continue # 驳回
+                
+                # 门禁二：检查选择的字段是否在已上传的数据源中
+                if source_table == 'Source A' and cols_a and new_match not in cols_a:
+                    st.warning(f"⚠️ 字段无效: '{new_match}' 不在已上传的 Source A 列名中，已自动忽略。")
+                    continue
+                
+                if source_table == 'Source B' and cols_b and new_match not in cols_b:
+                    st.warning(f"⚠️ 字段无效: '{new_match}' 不在已上传的 Source B 列名中，已自动忽略。")
+                    continue
+
+                # 其他安全检查：防空、防系统锁定字段
+                if '🔒' in source_table:
+                    st.toast(f"🔒 系统锁定字段 [{target}] 不可修改", icon="🚫")
+                    continue
+                
+                if not new_match or new_match in ['nan', 'None', '-']:
+                    st.toast(f"❌ 字段 [{target}] 不能为空", icon="🚫")
+                    continue
+
+                # 校验通过，更新 session_state
+                st.session_state.templates[st.session_state.editing_template_name].at[orig_idx, '匹配字段'] = new_match
 
         t1, t2, t3 = st.tabs(["结果表3 (底表)", "结果表2 (结算)", "结果表1 (工时)"])
         merged_options = cols_a + cols_b
         
         with t1: 
-            edited_t3 = UIComponents.render_native_editor("全量明细底表", df_c[df_c['所属表']=='结果表3'], is_default, merged_options)
+            edited_t3 = UIComponents.render_native_editor("全量明细底表", df_c[df_c["所属表"]=="结果表3"], is_default, cols_a, cols_b)
             if not is_default and edited_t3 is not None: save_and_validate(edited_t3)
         with t2: 
             st.info("ℹ️ 结果表 2 为衍生汇总表，规则由系统锁定。")
-            UIComponents.render_native_editor("结算汇总表", df_c[df_c['所属表']=='结果表2'], True, [])
+            UIComponents.render_native_editor("结算汇总表", df_c[df_c["所属表"]=="结果表2"], True, [], [])
         with t3: 
             st.info("ℹ️ 结果表 1 为衍生工时表，规则由系统锁定。")
-            UIComponents.render_native_editor("工时统计表", df_c[df_c['所属表']=='结果表1'], True, [])
+            UIComponents.render_native_editor("工时统计表", df_c[df_c["所属表"]=="结果表1"], True, [], [])
 
         if not is_default:
             st.markdown("<div class='action-btn-zone'></div>", unsafe_allow_html=True)
