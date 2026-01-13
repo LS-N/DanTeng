@@ -29,7 +29,7 @@ def inject_css():
         .file-stats { font-size: 12px; color: #8b949e; display: block; margin-top: 2px; }
         .file-icon { font-size: 24px; display: flex; align-items: center; justify-content: center; height: 100%; }
         
-        /* === 修复 X 按钮 CSS === */
+        /* === 1. 修复文件卡片 X 按钮 (保持原样) === */
         div[data-testid="column"] { overflow: visible !important; }
         div[data-testid="column"] button[kind="secondary"] {
             border: 1px solid rgba(255,255,255,0.1) !important;
@@ -44,9 +44,27 @@ def inject_css():
             color: #ff7b72 !important; border-color: #ff7b72 !important;
             background-color: rgba(255, 123, 114, 0.1) !important;
         }
-        div[data-testid="column"] button[kind="secondary"]:active,
-        div[data-testid="column"] button[kind="secondary"]:focus {
-            box-shadow: none !important; outline: none !important;
+        
+        /* === 2. 新增：针对“返回箭头”的隐形样式 (Tertiary) === */
+        /* 去除所有边框、背景，只保留文字/图标 */
+        button[kind="tertiary"] {
+            border: none !important;
+            background: transparent !important;
+            box-shadow: none !important;
+            font-size: 1.5rem !important; /* 让箭头大一点 */
+            padding: 0 !important;
+        }
+        /* 鼠标悬停时稍微变亮，但不要加背景色块 */
+        button[kind="tertiary"]:hover {
+            color: #58a6ff !important; /* 悬停变蓝 */
+            background: transparent !important;
+        }
+        button[kind="tertiary"]:active, button[kind="tertiary"]:focus {
+            color: #58a6ff !important;
+            background: transparent !important;
+            border: none !important;
+            outline: none !important;
+            box-shadow: none !important;
         }
         
         /* 顶部信息栏 */
@@ -768,10 +786,10 @@ elif st.session_state.page == 'mapping':
         st.session_state.prank_solved = False
 
     if not st.session_state.prank_solved:
-        # === 逃生通道：返回按钮 ===
+        # === 逃生通道：返回按钮 (已改为 Tertiary 幽灵按钮) ===
         c1, c2 = st.columns([9, 1])
         c1.write("")
-        if c2.button("⬅️", key="back_from_prank", use_container_width=True):
+        if c2.button("⬅️", key="back_from_prank", type="tertiary", use_container_width=True):
             st.session_state.page = 'main'
             st.rerun()
 
