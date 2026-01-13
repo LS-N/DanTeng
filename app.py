@@ -6,23 +6,6 @@ import zipfile
 import re
 
 # ==============================================================================
-# 依赖库检查与导入 (python-docx)
-# ==============================================================================
-try:
-    import docx
-    from docx.shared import Pt, Cm, RGBColor
-    from docx.oxml.ns import qn
-    from docx.oxml import OxmlElement
-    from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
-    from docx.enum.table import WD_ALIGN_VERTICAL, WD_ROW_HEIGHT_RULE
-    HAS_DOCX = True
-except ImportError:
-    HAS_DOCX = False
-
-from openpyxl.styles import Border, Side, Alignment, Font, PatternFill
-from openpyxl.utils import get_column_letter
-
-# ==============================================================================
 # Zone 0: 全局配置 & 样式注入
 # ==============================================================================
 st.set_page_config(page_title="淡藤财务报表 Pro", page_icon="😈", layout="wide", initial_sidebar_state="expanded")
@@ -69,23 +52,33 @@ def inject_css():
         }
         button[kind="tertiary"]:hover { color: #58a6ff !important; background: transparent !important; }
         
-        /* 顶部信息栏 */
-        .nav-header { font-size: 1.2rem; font-weight: bold; display:flex; align-items:center; height: 100%; }
-        .info-bar { background-color: rgba(56, 139, 253, 0.1); border-left: 4px solid #58a6ff; color: #c9d1d9; padding: 8px 15px; margin-bottom: 20px; font-size: 0.9rem; border-radius: 4px; }
-        .error-box { border: 1px solid #ff7b72; background-color: rgba(255, 123, 114, 0.1); padding: 15px; border-radius: 6px; margin-bottom: 15px; }
-        .balance-box-ok { border: 1px solid #238636; background-color: rgba(35, 134, 54, 0.1); padding: 10px; border-radius: 6px; margin-bottom: 15px; color: #3fb950; }
-        .balance-box-err { border: 1px solid #da3633; background-color: rgba(218, 54, 51, 0.1); padding: 10px; border-radius: 6px; margin-bottom: 15px; color: #f85149; font-weight: bold;}
+        /* === 保存与删除按钮区 === */
+        .action-btn-zone { margin-top: 20px; border-top: 1px solid #30363d; padding-top: 20px; }
 
     </style>
     """, unsafe_allow_html=True)
 
 # ==============================================================================
-# Zone A: 纯逻辑层 (DataEngine + WordGenerator + TemplateManager)
+# 依赖库检查
+# ==============================================================================
+try:
+    import docx
+    from docx.shared import Pt, Cm, RGBColor
+    from docx.oxml.ns import qn
+    from docx.oxml import OxmlElement
+    from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
+    from docx.enum.table import WD_ALIGN_VERTICAL, WD_ROW_HEIGHT_RULE
+    HAS_DOCX = True
+except ImportError:
+    HAS_DOCX = False
+
+from openpyxl.styles import Border, Side, Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
+
+# ==============================================================================
+# Zone A: 纯逻辑层
 # ==============================================================================
 class TemplateManager:
-    """
-    负责管理多套映射模板
-    """
     DEFAULT_NAME = "系统默认模板 (Default)"
 
     @staticmethod
@@ -94,8 +87,12 @@ class TemplateManager:
             st.session_state.templates = {
                 TemplateManager.DEFAULT_NAME: DataEngine.get_default_config()
             }
-        if 'current_template' not in st.session_state:
-            st.session_state.current_template = TemplateManager.DEFAULT_NAME
+        # 全局生效的模板（用于主页计算）
+        if 'active_template_name' not in st.session_state:
+            st.session_state.active_template_name = TemplateManager.DEFAULT_NAME
+        # 当前正在编辑的模板（用于Mapping页）
+        if 'editing_template_name' not in st.session_state:
+            st.session_state.editing_template_name = TemplateManager.DEFAULT_NAME
 
     @staticmethod
     def get_template(name):
@@ -109,9 +106,12 @@ class TemplateManager:
     def delete_template(name):
         if name in st.session_state.templates and name != TemplateManager.DEFAULT_NAME:
             del st.session_state.templates[name]
-            # 如果删除了当前选中的，重置为默认
-            if st.session_state.current_template == name:
-                st.session_state.current_template = TemplateManager.DEFAULT_NAME
+            # 如果删的是当前生效的，重置生效为默认
+            if st.session_state.active_template_name == name:
+                st.session_state.active_template_name = TemplateManager.DEFAULT_NAME
+            # 如果删的是当前编辑的，重置编辑为默认
+            if st.session_state.editing_template_name == name:
+                st.session_state.editing_template_name = TemplateManager.DEFAULT_NAME
             return True
         return False
 
@@ -182,8 +182,31 @@ class DataEngine:
         return pd.to_numeric(df[col].astype(str).str.replace(',', ''), errors='coerce').fillna(0)
 
     @staticmethod
+    def smart_slot_check(df, slot_type):
+        """
+        槽位防呆校验：
+        Slot A (工时) -> 应该包含 '人', '时', '项目', '工'
+        Slot B (费用) -> 应该包含 '金', '额', '费', '税', '票'
+        """
+        cols = "".join(list(df.columns))
+        is_ok = True
+        msg = ""
+        
+        if slot_type == 'A':
+            # 如果A槽位没有工时特征，却有明显的金额特征
+            if not any(k in cols for k in ['工', '时']) and any(k in cols for k in ['金', '额', '税']):
+                is_ok = False
+                msg = "⚠️ 警告：您似乎在 [Source A (工时)] 槽位上传了 [费用表]？请检查列名。"
+        elif slot_type == 'B':
+            # 如果B槽位没有金额特征，却有工时特征
+            if not any(k in cols for k in ['金', '额', '费']) and any(k in cols for k in ['工', '时']):
+                is_ok = False
+                msg = "⚠️ 警告：您似乎在 [Source B (费用)] 槽位上传了 [工时表]？请检查列名。"
+        
+        return is_ok, msg
+
+    @staticmethod
     def validate(df_a, df_b, config_df, min_hours):
-        """核心校验逻辑"""
         errors = []
         c = lambda t: DataEngine.get_col(config_df, t)
         
@@ -200,46 +223,56 @@ class DataEngine:
                 return False
             return True
 
-        valid_a = check(df_a, col_a_user, 'Source A', '人员') and check(df_a, col_a_spm, 'Source A', 'SPM') and check(df_a, col_a_hrs, 'Source A', '工时')
-        valid_b = check(df_b, col_b_user, 'Source B', '出差人') and check(df_b, col_b_spm, 'Source B', 'SPM') and check(df_b, col_b_amt, 'Source B', '金额')
+        # 如果 df_a 存在才校验 A，df_b 存在才校验 B
+        valid_a = True
+        if df_a is not None:
+            valid_a = check(df_a, col_a_user, 'Source A', '人员') and check(df_a, col_a_spm, 'Source A', 'SPM') and check(df_a, col_a_hrs, 'Source A', '工时')
+        
+        valid_b = True
+        if df_b is not None:
+            valid_b = check(df_b, col_b_user, 'Source B', '出差人') and check(df_b, col_b_spm, 'Source B', 'SPM') and check(df_b, col_b_amt, 'Source B', '金额')
+
         if not (valid_a and valid_b): return errors, df_a, df_b
 
-        if col_b_user in df_b.columns and col_a_user in df_a.columns:
-            users_in_a = set(df_a[col_a_user].astype(str).str.strip())
-            b_clean_series = df_b[col_b_user].astype(str).str.replace('_云计算', '', regex=False).str.strip()
-            users_in_b = set(b_clean_series)
-            ghost_users = users_in_b - users_in_a
-            if ghost_users:
-                for u in ghost_users:
-                    example_rows = df_b[b_clean_series == u]
-                    for idx, row in example_rows.iterrows():
-                        sys_id = row.get('_sys_id', idx+1)
-                        errors.append({
-                            '类型': '业务规则校验', 
-                            '来源': 'Source B', 
-                            '_sys_id': sys_id, 
-                            '行号': sys_id, 
-                            '信息': f'异常差旅：人员【{u}】产生差旅费用，但在 Source A 中无对应交付记录'
-                        })
+        # 仅当两表都存在时，才进行反向校验
+        if df_a is not None and df_b is not None:
+            if col_b_user in df_b.columns and col_a_user in df_a.columns:
+                users_in_a = set(df_a[col_a_user].astype(str).str.strip())
+                b_clean_series = df_b[col_b_user].astype(str).str.replace('_云计算', '', regex=False).str.strip()
+                users_in_b = set(b_clean_series)
+                ghost_users = users_in_b - users_in_a
+                if ghost_users:
+                    for u in ghost_users:
+                        example_rows = df_b[b_clean_series == u]
+                        for idx, row in example_rows.iterrows():
+                            sys_id = row.get('_sys_id', idx+1)
+                            errors.append({
+                                '类型': '业务规则校验', '来源': 'Source B', '_sys_id': sys_id, '行号': sys_id, 
+                                '信息': f'异常差旅：人员【{u}】产生差旅费用，但在 Source A 中无对应交付记录'
+                            })
 
-        df_a_clean = df_a.copy()
-        df_a_clean[col_a_hrs] = DataEngine.clean_num(df_a_clean, col_a_hrs)
-        for i, r in df_a_clean[df_a_clean[col_a_hrs] < 0].iterrows():
-            errors.append({'类型':'数据错误', '来源':'Source A', '_sys_id':r.get('_sys_id','-'), '行号':r.get('_sys_id','-'), '信息':'工时为负'})
-        
-        if col_a_user and col_a_hrs and min_hours > 0:
-            user_sums = df_a_clean.groupby(col_a_user)[col_a_hrs].sum()
-            invalid_users = user_sums[user_sums < min_hours]
-            for user, total_hrs in invalid_users.items():
-                sample_rows = df_a_clean[df_a_clean[col_a_user] == user]
-                if not sample_rows.empty:
-                    r = sample_rows.iloc[0]
-                    errors.append({'类型': '业务规则校验', '来源': 'Source A', '_sys_id': r.get('_sys_id', '-'), '行号': r.get('_sys_id', '-'), '信息': f'人员【{user}】总工时({total_hrs}h) 低于阈值({min_hours}h)'})
+        if df_a is not None:
+            df_a_clean = df_a.copy()
+            df_a_clean[col_a_hrs] = DataEngine.clean_num(df_a_clean, col_a_hrs)
+            for i, r in df_a_clean[df_a_clean[col_a_hrs] < 0].iterrows():
+                errors.append({'类型':'数据错误', '来源':'Source A', '_sys_id':r.get('_sys_id','-'), '行号':r.get('_sys_id','-'), '信息':'工时为负'})
+            
+            if col_a_user and col_a_hrs and min_hours > 0:
+                user_sums = df_a_clean.groupby(col_a_user)[col_a_hrs].sum()
+                invalid_users = user_sums[user_sums < min_hours]
+                for user, total_hrs in invalid_users.items():
+                    sample_rows = df_a_clean[df_a_clean[col_a_user] == user]
+                    if not sample_rows.empty:
+                        r = sample_rows.iloc[0]
+                        errors.append({'类型': '业务规则校验', '来源': 'Source A', '_sys_id': r.get('_sys_id', '-'), '行号': r.get('_sys_id', '-'), '信息': f'人员【{user}】总工时({total_hrs}h) 低于阈值({min_hours}h)'})
         
         return errors, df_a, df_b
 
     @staticmethod
     def calculate(df_a, df_b, config_df, price_per_day, subsidy_tag):
+        # 简单处理：如果有一个表为空，返回空结果
+        if df_a is None or df_b is None: return None
+
         c = lambda t: DataEngine.get_col(config_df, t)
         col_a_user = c('人员')
         col_a_spm = c('SPM')
@@ -306,6 +339,7 @@ class DataEngine:
 
     @staticmethod
     def verify_balance(df_a, df_b, results_dict, config_df):
+        if results_dict is None: return True, ""
         messages = []
         is_balanced = True
         
@@ -317,7 +351,6 @@ class DataEngine:
         df_t2 = results_dict['t2']
         df_t3 = results_dict['t3']
         
-        # --- 1. 源数据 vs 结果数据 总额校验 ---
         clean_a_hrs = DataEngine.clean_num(df_a, col_a_hrs).sum()
         res_hrs = df_t3['耗时（小时）'].sum()
         if abs(clean_a_hrs - res_hrs) > 0.1:
@@ -330,18 +363,14 @@ class DataEngine:
             is_balanced = False
             messages.append(f"❌ [输入输出] 金额丢失：源表({clean_b_amt:,.2f}) != 明细表({res_amt:,.2f}) (可能原因：B表有SPM未匹配到A表)")
 
-        # --- 2. 内部勾稽关系校验 (Simulate Result 4) ---
         req_cols = ['合同主体', '人事范围', '销售部门']
         if all(c in df_t3.columns for c in req_cols):
-            # T4: 按照分单维度聚合
             df_t4 = df_t3.groupby(req_cols)[['结算费用合计', '支持时间（人天）']].sum().reset_index()
-            
-            # (A) 校验 T4 vs T2
             t2_sum_amt = df_t2['金额（含税，单位：元）'].sum()
             t4_sum_amt = df_t4['结算费用合计'].sum()
             if abs(t2_sum_amt - t4_sum_amt) > 0.05:
                 is_balanced = False
-                messages.append(f"❌ [内部勾稽] 结算汇总表(T2)与分单合集(T4)金额不平: {t2_sum_amt:,.2f} vs {t4_sum_amt:,.2f}")
+                messages.append(f"❌ [内部勾稽] 结算汇总表(T2)与分单合集(T4)金额不平")
             
             t2_sum_days = df_t2['工作量（人天）'].sum()
             t4_sum_days = df_t4['支持时间（人天）'].sum()
@@ -349,14 +378,12 @@ class DataEngine:
                 is_balanced = False
                 messages.append(f"❌ [内部勾稽] 结算汇总表(T2)与分单合集(T4)人天不平")
 
-            # (B) 校验 T4 vs T1
             t1_sum_hrs = df_t1['项目工时'].sum()
             t4_calc_hrs = df_t4['支持时间（人天）'].sum() * 8
             if abs(t1_sum_hrs - t4_calc_hrs) > 0.1:
                 is_balanced = False
-                messages.append(f"❌ [内部勾稽] 工时统计表(T1)与分单合集(T4)工时转换不平: {t1_sum_hrs:,.1f} vs {t4_calc_hrs:,.1f}")
+                messages.append(f"❌ [内部勾稽] 工时统计表(T1)与分单合集(T4)工时转换不平")
 
-            # (C) 校验 T4 vs T3
             t3_sum_amt = df_t3['结算费用合计'].sum()
             if abs(t3_sum_amt - t4_sum_amt) > 0.05:
                  is_balanced = False
@@ -538,6 +565,11 @@ class UIComponents:
                     'period': "2025年第三季度"
                 }
 
+            # 1. 侧边栏结构优化：主页只显示当前生效的模板
+            st.info(f"⚡ 当前生效计算模板：\n**{st.session_state.active_template_name}**")
+            
+            st.divider()
+            
             st.session_state.params['price'] = st.number_input("人力单价 (元/天)", value=st.session_state.params['price'], step=100)
             if has_error: st.error("🚨 请调整工时", icon=None)
             st.session_state.params['hours_limit'] = st.number_input("工时阈值 (小时)", value=st.session_state.params['hours_limit'])
@@ -546,8 +578,6 @@ class UIComponents:
             
             current_params = st.session_state.params.copy()
             last_run_params = st.session_state.get('last_run_params', None)
-            
-            # --- 修复：触发计算时，检查是否选择了模板且上传了文件 ---
             has_files = st.session_state.data_store['A']['df'] is not None and st.session_state.data_store['B']['df'] is not None
             param_changed = last_run_params is not None and current_params != last_run_params
             
@@ -588,6 +618,12 @@ class UIComponents:
                 if file:
                     df = UIComponents.load_data_cached(file, file.name)
                     if df is not None:
+                        # 槽位智能校验
+                        is_ok, msg = DataEngine.smart_slot_check(df, key)
+                        if not is_ok:
+                            st.toast(msg, icon="🚨")
+                            time.sleep(2) # 给用户一点时间看提示
+                        
                         st.session_state.data_store[key] = {'df': df, 'name': file.name}
                         st.session_state.is_calculated = False
                         st.session_state.error_report = None
@@ -654,7 +690,7 @@ class UIComponents:
                         c_b.download_button("下载", fbytes, fname, key=f"btn_{fname}")
 
     @staticmethod
-    def render_native_editor(desc, subset, is_edit, cols_a, cols_b):
+    def render_native_editor(desc, subset, cols_a, cols_b):
         st.markdown(f'<div class="info-bar">ℹ️ {desc}</div>', unsafe_allow_html=True)
         df_display = subset[['序号', '目标字段', '源表', '匹配字段', '逻辑说明']].copy().reset_index(drop=True)
         df_display['序号'] = df_display['序号'].astype(str)
@@ -662,48 +698,16 @@ class UIComponents:
             "序号": st.column_config.TextColumn("序号", width="small", disabled=True),
             "目标字段": st.column_config.TextColumn("目标字段", disabled=True, width="medium"),
             "逻辑说明": st.column_config.TextColumn("逻辑说明", disabled=True, width="large"),
+            "源表": st.column_config.SelectboxColumn("源表", options=["Source A", "Source B"], width="small", required=True),
+            # 这里虽然是混用，但我们会用逻辑限制
+            "匹配字段": st.column_config.SelectboxColumn("匹配字段", options=cols_a + cols_b, width="medium", required=True)
         }
-        if is_edit:
-            column_config["源表"] = st.column_config.SelectboxColumn("源表", options=["Source A", "Source B"], width="small", required=True)
-            column_config["匹配字段"] = st.column_config.SelectboxColumn("匹配字段", options=cols_a + cols_b, width="medium", required=True)
-        else:
-            column_config["源表"] = st.column_config.TextColumn("源表", disabled=True)
-            column_config["匹配字段"] = st.column_config.TextColumn("匹配字段", disabled=True)
         
         calc_height = (len(df_display) + 1) * 35 + 10
         final_height = max(400, min(1000, calc_height))
-        # 使用当前选中模板的 name 作为 key 的一部分，防止切换模板时状态混淆
-        editor_key = f"editor_{subset.iloc[0]['所属表']}_{st.session_state.current_template}"
-        edited = st.data_editor(df_display, column_config=column_config, use_container_width=True, hide_index=True, disabled=not is_edit, height=final_height, key=editor_key)
-
-        if is_edit:
-            # 获取当前模板的全量配置
-            current_full_config = st.session_state.templates[st.session_state.current_template]
-            
-            for i, row in edited.iterrows():
-                # 找到原始 config 中的对应行索引 (假设序号唯一且一致)
-                target_field = row['目标字段']
-                table_name = subset.iloc[0]['所属表']
-                
-                # 在全量配置中定位
-                mask = (current_full_config['所属表'] == table_name) & (current_full_config['目标字段'] == target_field)
-                
-                if not mask.any(): continue
-                orig_idx = current_full_config[mask].index[0]
-                
-                orig_row = current_full_config.loc[orig_idx]
-                if 'Source' not in str(orig_row['源表']): continue 
-                
-                # 更新逻辑
-                if row['源表'] != orig_row['源表']:
-                    st.session_state.templates[st.session_state.current_template].at[orig_idx, '源表'] = row['源表']
-                    target_opts = cols_a if row['源表'] == 'Source A' else cols_b
-                    new_val = row['目标字段'] if row['目标字段'] in target_opts else (target_opts[0] if target_opts else None)
-                    st.session_state.templates[st.session_state.current_template].at[orig_idx, '匹配字段'] = new_val
-                elif row['匹配字段'] != orig_row['匹配字段']:
-                    valid_opts = cols_a if row['源表'] == 'Source A' else cols_b
-                    if row['匹配字段'] in valid_opts:
-                        st.session_state.templates[st.session_state.current_template].at[orig_idx, '匹配字段'] = row['匹配字段']
+        # Editor Key 需要唯一
+        editor_key = f"editor_{subset.iloc[0]['所属表']}_{st.session_state.editing_template_name}"
+        return st.data_editor(df_display, column_config=column_config, use_container_width=True, hide_index=True, height=final_height, key=editor_key)
 
 # ==============================================================================
 # Zone C: 控制层
@@ -712,7 +716,6 @@ if 'page' not in st.session_state: st.session_state.page = 'main'
 if 'data_store' not in st.session_state: st.session_state.data_store = {'A': {'df': None, 'name': None}, 'B': {'df': None, 'name': None}}
 if 'is_calculated' not in st.session_state: st.session_state.is_calculated = False
 if 'error_report' not in st.session_state: st.session_state.error_report = None
-if 'is_editing_mapping' not in st.session_state: st.session_state.is_editing_mapping = False
 if 'all_zip' not in st.session_state: st.session_state.all_zip = None
 if 'word_files' not in st.session_state: st.session_state.word_files = {}
 if 'result_files' not in st.session_state: st.session_state.result_files = {}
@@ -722,36 +725,30 @@ if 'balance_check' not in st.session_state: st.session_state.balance_check = (Tr
 # 新增：Mapping 页面的独立采样数据
 if 'sample_store' not in st.session_state: st.session_state.sample_store = {'A': None, 'B': None}
 
-# 初始化模板管理器
 TemplateManager.init_defaults()
-
 inject_css()
 
 if st.session_state.page == 'main':
     current_params, manual_recalc = UIComponents.render_sidebar(st.session_state.threshold_error_flag)
     st.title("😈 淡藤财务报表 Pro")
 
-    # --- 主页：模板选择器 ---
     with st.container(border=True):
         c_h1, c_h2 = st.columns([0.7, 0.3], vertical_alignment="bottom")
         c_h1.markdown("### 📂 数据源控制台")
         
-        # 模板选择下拉框
+        # 主页选择生效模板
         all_templates = TemplateManager.get_all_names()
-        # 确保当前选中值有效
-        if st.session_state.current_template not in all_templates:
-            st.session_state.current_template = TemplateManager.DEFAULT_NAME
+        if st.session_state.active_template_name not in all_templates:
+            st.session_state.active_template_name = TemplateManager.DEFAULT_NAME
             
         selected_tpl = c_h2.selectbox(
             "选择计算规则模板", 
             options=all_templates, 
-            index=all_templates.index(st.session_state.current_template),
+            index=all_templates.index(st.session_state.active_template_name),
             key="main_template_selector"
         )
-        # 同步更新全局状态
-        if selected_tpl != st.session_state.current_template:
-            st.session_state.current_template = selected_tpl
-            # 切换模板后，强制重新计算（如果有文件）
+        if selected_tpl != st.session_state.active_template_name:
+            st.session_state.active_template_name = selected_tpl
             st.session_state.is_calculated = False
             st.rerun()
 
@@ -761,7 +758,6 @@ if st.session_state.page == 'main':
         with c1: UIComponents.render_file_slot('A', "Source A: 投入明细 (工时)", st.session_state.data_store)
         with c2: UIComponents.render_file_slot('B', "Source B: 差旅明细 (费用)", st.session_state.data_store)
         
-        # 重置按钮移到底部或单独处理
         if st.button("🗑️ 清空所有文件", type="secondary", use_container_width=True): 
             st.session_state.data_store = {'A': {'df': None, 'name': None}, 'B': {'df': None, 'name': None}}
             st.session_state.is_calculated = False
@@ -780,15 +776,14 @@ if st.session_state.page == 'main':
         elif manual_recalc: should_calculate = True
         
         if should_calculate:
-            # 获取当前选中的模板配置
-            active_config = TemplateManager.get_template(st.session_state.current_template)
+            active_config = TemplateManager.get_template(st.session_state.active_template_name)
             
-            with st.spinner(f"🚀 正在使用 [{st.session_state.current_template}] 模板计算..."):
+            with st.spinner(f"🚀 正在使用 [{st.session_state.active_template_name}] 模板计算..."):
                 st.session_state.threshold_error_flag = False
                 errs, df_a, df_b = DataEngine.validate(
                     st.session_state.data_store['A']['df'].copy(),
                     st.session_state.data_store['B']['df'].copy(),
-                    active_config,  # 传入当前模板
+                    active_config, 
                     current_params['hours_limit']
                 )
 
@@ -799,36 +794,36 @@ if st.session_state.page == 'main':
                     st.rerun()
                 else:
                     res = DataEngine.calculate(df_a, df_b, active_config, current_params['price'], current_params['sub_tag'])
-                    st.session_state.balance_check = DataEngine.verify_balance(df_a, df_b, res, active_config)
-                    
-                    q_str = DataEngine.get_quarter_str(current_params['period'])
-                    t2_title = f"{q_str[2:]}实施交付部项目投入考核调整总表"
-                    
-                    excel_files_dict = {
-                        "t1": DataEngine.to_bytes(res['t1']),
-                        "t2": DataEngine.to_bytes(res['t2'], title=t2_title),
-                        "t3": DataEngine.to_bytes(res['t3'])
-                    }
-                    st.session_state.result_files = excel_files_dict
-                    word_files_dict, err_msg = WordGenerator.generate(res['t3'], current_params['period'])
-                    if err_msg: st.warning(f"Word生成受限: {err_msg}")
-                    st.session_state.word_files = word_files_dict
-                    
-                    all_files_to_zip = {}
-                    all_files_to_zip[f"实施交付部项目情况汇总_部门工时统计-{q_str}.xlsx"] = excel_files_dict['t1']
-                    all_files_to_zip[f"{q_str}实施交付部项目投入考核调整总表.xlsx"] = excel_files_dict['t2']
-                    all_files_to_zip[f"实施交付部项目情况汇总_结算工时总表-{q_str}.xlsx"] = excel_files_dict['t3']
-                    all_files_to_zip.update(word_files_dict)
-                    
-                    buf_zip = io.BytesIO()
-                    with zipfile.ZipFile(buf_zip, 'w', zipfile.ZIP_DEFLATED) as z:
-                        for fname, fcontent in all_files_to_zip.items(): z.writestr(fname, fcontent)
-                    st.session_state.all_zip = buf_zip.getvalue()
-                    
-                    st.session_state.is_calculated = True
-                    st.session_state.error_report = None
-                    st.session_state.last_run_params = current_params.copy()
-                    st.rerun()
+                    if res:
+                        st.session_state.balance_check = DataEngine.verify_balance(df_a, df_b, res, active_config)
+                        q_str = DataEngine.get_quarter_str(current_params['period'])
+                        t2_title = f"{q_str[2:]}实施交付部项目投入考核调整总表"
+                        
+                        excel_files_dict = {
+                            "t1": DataEngine.to_bytes(res['t1']),
+                            "t2": DataEngine.to_bytes(res['t2'], title=t2_title),
+                            "t3": DataEngine.to_bytes(res['t3'])
+                        }
+                        st.session_state.result_files = excel_files_dict
+                        word_files_dict, err_msg = WordGenerator.generate(res['t3'], current_params['period'])
+                        if err_msg: st.warning(f"Word生成受限: {err_msg}")
+                        st.session_state.word_files = word_files_dict
+                        
+                        all_files_to_zip = {}
+                        all_files_to_zip[f"实施交付部项目情况汇总_部门工时统计-{q_str}.xlsx"] = excel_files_dict['t1']
+                        all_files_to_zip[f"{q_str}实施交付部项目投入考核调整总表.xlsx"] = excel_files_dict['t2']
+                        all_files_to_zip[f"实施交付部项目情况汇总_结算工时总表-{q_str}.xlsx"] = excel_files_dict['t3']
+                        all_files_to_zip.update(word_files_dict)
+                        
+                        buf_zip = io.BytesIO()
+                        with zipfile.ZipFile(buf_zip, 'w', zipfile.ZIP_DEFLATED) as z:
+                            for fname, fcontent in all_files_to_zip.items(): z.writestr(fname, fcontent)
+                        st.session_state.all_zip = buf_zip.getvalue()
+                        
+                        st.session_state.is_calculated = True
+                        st.session_state.error_report = None
+                        st.session_state.last_run_params = current_params.copy()
+                        st.rerun()
 
     if st.session_state.error_report is not None:
         is_threshold_err = UIComponents.render_error_report(st.session_state.error_report)
@@ -872,97 +867,128 @@ elif st.session_state.page == 'mapping':
     else:
         # === 规则配置中心 (Mapping Page) ===
         
-        # 1. 侧边栏：模板管理区
+        # 1. 侧边栏：模板列表管理
         with st.sidebar:
             st.header("📏 规则模板管理")
             
-            # 模板列表
             all_templates = TemplateManager.get_all_names()
+            
+            # 如果当前编辑的模板被删了，或者不存在，重置为默认
+            if st.session_state.editing_template_name not in all_templates:
+                st.session_state.editing_template_name = TemplateManager.DEFAULT_NAME
+
+            # 模板选择器
             selected_editor_tpl = st.selectbox(
-                "当前编辑模板", 
+                "选择要编辑的模板", 
                 options=all_templates, 
-                index=all_templates.index(st.session_state.current_template) if st.session_state.current_template in all_templates else 0
+                index=all_templates.index(st.session_state.editing_template_name)
             )
             
-            # 切换当前编辑的模板
-            if selected_editor_tpl != st.session_state.current_template:
-                st.session_state.current_template = selected_editor_tpl
+            if selected_editor_tpl != st.session_state.editing_template_name:
+                st.session_state.editing_template_name = selected_editor_tpl
+                # 切换模板时，清空当前上传的样张，避免混淆
+                st.session_state.sample_store = {'A': None, 'B': None}
                 st.rerun()
             
             st.divider()
             
             # 新建模板
-            new_tpl_name = st.text_input("新建模板名称", placeholder="输入名称...")
-            if st.button("➕ 创建新模板", use_container_width=True):
-                if new_tpl_name and new_tpl_name not in st.session_state.templates:
-                    # 复制默认配置作为新模板
-                    TemplateManager.save_template(new_tpl_name, DataEngine.get_default_config().copy())
-                    st.session_state.current_template = new_tpl_name
-                    st.success(f"模板 {new_tpl_name} 已创建")
-                    time.sleep(0.5)
-                    st.rerun()
-                elif new_tpl_name:
-                    st.error("模板名称已存在")
-            
-            # 删除模板
-            if st.session_state.current_template != TemplateManager.DEFAULT_NAME:
-                if st.button("🗑️ 删除当前模板", type="primary", use_container_width=True):
-                    TemplateManager.delete_template(st.session_state.current_template)
-                    st.rerun()
-            else:
-                st.info("默认模板不可删除")
+            with st.popover("➕ 新建模板"):
+                new_tpl_name = st.text_input("模板名称", placeholder="例如: 2025新规则")
+                if st.button("创建", use_container_width=True):
+                    if new_tpl_name and new_tpl_name not in st.session_state.templates:
+                        TemplateManager.save_template(new_tpl_name, DataEngine.get_default_config().copy())
+                        st.session_state.editing_template_name = new_tpl_name
+                        st.session_state.sample_store = {'A': None, 'B': None}
+                        st.success(f"模板 {new_tpl_name} 已创建")
+                        time.sleep(0.5)
+                        st.rerun()
+                    elif new_tpl_name:
+                        st.error("名称已存在")
 
-        # 2. 主区域：配置编辑器
+        # 2. 主区域
         c1, c2 = st.columns([8, 2], vertical_alignment="center")
-        c1.markdown(f"<div class='nav-header'>📏 正在编辑: {st.session_state.current_template}</div>", unsafe_allow_html=True)
+        c1.markdown(f"<div class='nav-header'>📏 正在编辑: {st.session_state.editing_template_name}</div>", unsafe_allow_html=True)
         if c2.button("⬅️ 返回主页", type="tertiary", use_container_width=True): 
             st.session_state.page = 'main'
             st.rerun()
         
         st.markdown("<hr style='margin-top:0; border-color:#30363d;'>", unsafe_allow_html=True)
         
-        # 3. 采样数据上传区 (独立于主页)
-        with st.expander("📂 上传样例数据 (用于提取列名，不参与计算)", expanded=True):
-            st.caption("提示：此处上传的文件仅用于获取表头（列名），以便在下方下拉框中选择。上传后无需保存，配置完成后可直接返回主页。")
+        # 3. 采样数据上传区
+        with st.container(border=True):
+            st.caption("📂 **上传样张 (仅用于获取列名，不做计算)**")
             sc1, sc2 = st.columns(2)
             
             # 采样 A 表
-            sample_a = sc1.file_uploader("样例 A 表 (工时)", type=['xlsx', 'csv'], key="sample_a")
+            sample_a = sc1.file_uploader("Source A 样张", type=['xlsx', 'csv'], key="sample_a")
             if sample_a: 
                 df = UIComponents.load_data_cached(sample_a, sample_a.name)
-                if df is not None: st.session_state.sample_store['A'] = list(df.columns)
+                if df is not None: 
+                    # 槽位校验
+                    is_ok, msg = DataEngine.smart_slot_check(df, 'A')
+                    if not is_ok: st.toast(msg, icon="⚠️")
+                    st.session_state.sample_store['A'] = list(df.columns)
             
             # 采样 B 表
-            sample_b = sc2.file_uploader("样例 B 表 (费用)", type=['xlsx', 'csv'], key="sample_b")
+            sample_b = sc2.file_uploader("Source B 样张", type=['xlsx', 'csv'], key="sample_b")
             if sample_b:
                 df = UIComponents.load_data_cached(sample_b, sample_b.name)
-                if df is not None: st.session_state.sample_store['B'] = list(df.columns)
+                if df is not None: 
+                    is_ok, msg = DataEngine.smart_slot_check(df, 'B')
+                    if not is_ok: st.toast(msg, icon="⚠️")
+                    st.session_state.sample_store['B'] = list(df.columns)
 
-        # 4. 获取可用的列名列表 (优先用采样数据，没有则用主页数据，再没有则为空)
-        cols_a = st.session_state.sample_store['A'] or (list(st.session_state.data_store['A']['df'].columns) if st.session_state.data_store['A']['df'] is not None else [])
-        cols_b = st.session_state.sample_store['B'] or (list(st.session_state.data_store['B']['df'].columns) if st.session_state.data_store['B']['df'] is not None else [])
-
-        # 5. 编辑器操作栏
-        c_action = st.columns([7, 1, 2])[2]
-        with c_action:
-            if not st.session_state.is_editing_mapping:
-                if st.button("✏️ 编辑当前配置", type="primary", use_container_width=True):
-                    if not cols_a and not cols_b:
-                        st.toast("请先上传样例文件以获取列名", icon="🚫")
-                    else:
-                        st.session_state.is_editing_mapping = True
-                        st.rerun()
-            else:
-                if st.button("💾 保存生效", type="primary", use_container_width=True):
-                    st.session_state.is_editing_mapping = False
-                    st.toast(f"模板 {st.session_state.current_template} 已保存")
-                    st.rerun()
-
-        # 6. 渲染编辑器 Tabs
-        # 获取当前正在编辑的配置 DataFrame
-        df_c = st.session_state.templates[st.session_state.current_template]
+        # 4. 获取列名
+        cols_a = st.session_state.sample_store['A'] or []
+        cols_b = st.session_state.sample_store['B'] or []
+        
+        # 5. 编辑器
+        df_c = st.session_state.templates[st.session_state.editing_template_name]
         
         t1, t2, t3 = st.tabs(["结果表3 (底表)", "结果表2 (结算)", "结果表1 (工时)"])
-        with t1: UIComponents.render_native_editor("全量明细底表", df_c[df_c['所属表']=='结果表3'], st.session_state.is_editing_mapping, cols_a, cols_b)
-        with t2: UIComponents.render_native_editor("结算汇总表", df_c[df_c['所属表']=='结果表2'], st.session_state.is_editing_mapping, cols_a, cols_b)
-        with t3: UIComponents.render_native_editor("工时统计表", df_c[df_c['所属表']=='结果表1'], st.session_state.is_editing_mapping, cols_a, cols_b)
+        
+        # 定义一个回调函数来保存更改
+        def save_changes(new_df, table_name):
+            # 更新 Session State 中的模板数据
+            current_config = st.session_state.templates[st.session_state.editing_template_name]
+            # 这里需要根据 table_name 更新 current_config 的对应部分
+            # 为了简单，我们直接把 DataEditor 返回的完整 DF 覆盖对应部分
+            # 但因为我们是分 Tab 展示的，所以要小心合并
+            # 最佳实践：DataEditor 返回的是修改后的子集，我们需要把这个子集 merge 回全集
+            
+            # 这里简化处理：直接修改引用
+            for idx, row in new_df.iterrows():
+                # 找到原始配置中的对应行（通过 所属表+目标字段 唯一确定）
+                mask = (current_config['所属表'] == table_name) & (current_config['目标字段'] == row['目标字段'])
+                if mask.any():
+                    orig_idx = current_config[mask].index[0]
+                    st.session_state.templates[st.session_state.editing_template_name].at[orig_idx, '源表'] = row['源表']
+                    st.session_state.templates[st.session_state.editing_template_name].at[orig_idx, '匹配字段'] = row['匹配字段']
+
+        with t1: 
+            edited_t3 = UIComponents.render_native_editor("全量明细底表", df_c[df_c['所属表']=='结果表3'], cols_a, cols_b)
+            save_changes(edited_t3, '结果表3')
+        with t2: 
+            edited_t2 = UIComponents.render_native_editor("结算汇总表", df_c[df_c['所属表']=='结果表2'], cols_a, cols_b)
+            save_changes(edited_t2, '结果表2')
+        with t3: 
+            edited_t1 = UIComponents.render_native_editor("工时统计表", df_c[df_c['所属表']=='结果表1'], cols_a, cols_b)
+            save_changes(edited_t1, '结果表1')
+
+        # 6. 底部按钮区
+        st.markdown("<div class='action-btn-zone'></div>", unsafe_allow_html=True)
+        bc1, bc2, bc3 = st.columns([2, 6, 2])
+        
+        with bc1:
+            if st.session_state.editing_template_name != TemplateManager.DEFAULT_NAME:
+                if st.button("🗑️ 删除模板", type="secondary", use_container_width=True):
+                    TemplateManager.delete_template(st.session_state.editing_template_name)
+                    st.rerun()
+            else:
+                st.button("🗑️ 删除模板", disabled=True, use_container_width=True, help="系统默认模板不可删除")
+        
+        with bc3:
+            # 实际上 DataEditor 是实时生效的，但给用户一个“保存”按钮更有安全感
+            if st.button("💾 保存配置", type="primary", use_container_width=True):
+                st.toast(f"模板 [{st.session_state.editing_template_name}] 已保存", icon="✅")
