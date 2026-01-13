@@ -84,19 +84,6 @@ def inject_css():
         .balance-box-ok { border: 1px solid #238636; background-color: rgba(35, 134, 54, 0.1); padding: 10px; border-radius: 6px; margin-bottom: 15px; color: #3fb950; }
         .balance-box-err { border: 1px solid #da3633; background-color: rgba(218, 54, 51, 0.1); padding: 10px; border-radius: 6px; margin-bottom: 15px; color: #f85149; font-weight: bold;}
 
-        /* === 恶作剧彩蛋样式 === */
-        .prank-text {
-            text-align: center;
-            font-size: 2.5rem;
-            color: #484f58; /* 很暗的灰色，像背景一样 */
-            margin-top: 150px;
-            font-family: 'Courier New', monospace;
-        }
-        .prank-hint {
-            color: #21262d; /* 几乎看不见的颜色 */
-            font-size: 0.8rem;
-        }
-        
     </style>
     """, unsafe_allow_html=True)
 
@@ -892,14 +879,49 @@ elif st.session_state.page == 'mapping':
         st.session_state.prank_solved = False
 
     if not st.session_state.prank_solved:
-        # 恶作剧界面
-        st.markdown("<div class='prank-text'>你以为有什么？</div>", unsafe_allow_html=True)
-        col1, col2, col3 = st.columns([10, 1, 10])
+        # === 核心修改：将“你以为有什么？”变成一个隐形按钮 ===
+        # 注入局部 CSS，剥离按钮的所有样式
+        st.markdown("""
+        <style>
+        /* 针对当前视图下的按钮进行隐形处理 */
+        section.main button {
+            background-color: transparent !important;
+            border: none !important;
+            color: #484f58 !important;
+            font-family: 'Courier New', monospace !important;
+            font-size: 2.5rem !important;
+            padding: 0 !important;
+            margin-top: 150px !important; /* 保持原有的位置 */
+            box-shadow: none !important;
+            transition: none !important;
+        }
+        /* 移除悬停、点击、聚焦时的反馈，确保“看不出来能触发” */
+        section.main button:hover {
+            color: #484f58 !important;
+            border: none !important;
+            background-color: transparent !important;
+        }
+        section.main button:active, section.main button:focus {
+            color: #484f58 !important;
+            background-color: transparent !important;
+            border: none !important;
+            outline: none !important;
+            box-shadow: none !important;
+        }
+        /* 辅助居中 */
+        div[data-testid="column"] {
+            display: flex;
+            justify-content: center;
+        }
+        </style>
+        """, unsafe_allow_html=True)
+
+        col1, col2, col3 = st.columns([1, 8, 1]) 
         with col2:
-            # 隐藏的触发按钮
-            if st.button("？", type="tertiary"): 
-                st.session_state.prank_solved = True
-                st.rerun()
+             # 这个按钮现在看起来就像一行普通的文本
+             if st.button("你以为有什么？"):
+                 st.session_state.prank_solved = True
+                 st.rerun()
     else:
         # 真正的映射页面内容
         c1, c2 = st.columns([9, 1])
