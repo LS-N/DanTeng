@@ -588,7 +588,8 @@ class UIComponents:
             st.markdown('<div style="flex: 1;"></div>', unsafe_allow_html=True)
             
             # 猫咪按钮
-            if st.button("🐱", key="btn_cat_config", type="tertiary", help="进入规则配置中心"):
+            # --- 修改点：删除了 help="进入规则配置中心" 参数，鼠标悬停不再有黑框提示 ---
+            if st.button("🐱", key="btn_cat_config", type="tertiary"):
                 st.session_state.page = 'mapping'; st.session_state.prank_solved = False; st.rerun()
             
             # 底部留白
@@ -949,4 +950,5 @@ elif st.session_state.page == 'mapping':
             with bc3:
                 if st.button("💾 确认生效", type="primary", use_container_width=True):
                     st.toast(f"模板 [{st.session_state.editing_template_name}] 已更新并校验通过", icon="✅")
+
 
