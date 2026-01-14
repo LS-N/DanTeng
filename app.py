@@ -58,11 +58,23 @@ def inject_css():
             background-color: rgba(255, 123, 114, 0.1) !important;
         }
         
+        /* --- 核心修改：让 tertiary 按钮看起来像纯图标 --- */
         button[kind="tertiary"] {
-            border: none !important; background: transparent !important; box-shadow: none !important;
-            font-size: 1.5rem !important; padding: 0 !important;
+            border: none !important; 
+            background: transparent !important; 
+            box-shadow: none !important;
+            font-size: 2rem !important; /* 加大图标尺寸 */
+            padding: 0 !important;
+            width: 100%;
+            display: flex;
+            justify-content: center;
         }
-        button[kind="tertiary"]:hover { color: #58a6ff !important; background: transparent !important; }
+        button[kind="tertiary"]:hover { 
+            color: #58a6ff !important; 
+            background: transparent !important;
+            transform: scale(1.1); /* 鼠标悬停微放大 */
+            transition: transform 0.1s;
+        }
         
         .sidebar-section { margin-bottom: 20px; }
         .sidebar-label { font-size: 0.85rem; color: #8b949e; margin-bottom: 5px; font-weight: 600; }
@@ -539,7 +551,7 @@ class UIComponents:
                 if st.button("重新运算", type="primary", use_container_width=True): trigger_recalc = True
             
             st.markdown("---")
-            if st.button("🐱 规则配置中心"):
+            if st.button("🐱", key="btn_cat_config", type="tertiary", help="进入规则配置中心"):
                 st.session_state.page = 'mapping'; st.session_state.prank_solved = False; st.rerun()
             return current_params, trigger_recalc
 
