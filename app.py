@@ -525,7 +525,7 @@ class UIComponents:
             st.session_state.params['price'] = st.number_input("人力单价 (元/天)", value=st.session_state.params['price'], step=100)
             if threshold_error_flag: st.error("🚨 请调整工时", icon=None)
             st.session_state.params['hours_limit'] = st.number_input("工时阈值 (小时)", value=st.session_state.params['hours_limit'])
-            st.session_state.params['sub_tag'] = st.text_input("补助关键词", value=st.session_state.params['sub_tag'])
+            # st.session_state.params['sub_tag'] 已在 init_defaults 中硬编码，无需显示输入框
             st.session_state.params['period'] = st.text_input("结算周期文案", value=st.session_state.params['period'])
             
             current_params = st.session_state.params.copy()
