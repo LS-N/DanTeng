@@ -587,8 +587,7 @@ class UIComponents:
             # 利用父容器的 Flex 属性，这个空的 div 会自动撑开所有剩余空间
             st.markdown('<div style="flex: 1;"></div>', unsafe_allow_html=True)
             
-            # 猫咪按钮
-            # --- 修改点：删除了 help="进入规则配置中心" 参数，鼠标悬停不再有黑框提示 ---
+            # 猫咪按钮 - 无提示文案
             if st.button("🐱", key="btn_cat_config", type="tertiary"):
                 st.session_state.page = 'mapping'; st.session_state.prank_solved = False; st.rerun()
             
@@ -786,62 +785,63 @@ if st.session_state.page == 'main':
 
 elif st.session_state.page == 'mapping':
     if 'prank_solved' not in st.session_state: st.session_state.prank_solved = False
-    
-    # 1. 未解锁状态：显示隐形链接
     if not st.session_state.prank_solved:
-        # --- 隐形链接交互逻辑 ---
+        # --- 隐形链接交互逻辑 START ---
+        # 移除旧按钮和旧文字，只保留一个全屏居中的大号隐形链接组
+        # 关键修改：cursor: default 让鼠标不变成手型
         st.markdown("""
             <style>
                 .prank-container { 
-                    height: 80vh; 
+                    height: 80vh; /* 占据视窗高度，实现垂直居中 */
                     display: flex; 
-                    justify-content: center; 
-                    align-items: center; 
+                    justify-content: center; /* 水平居中 */
+                    align-items: center; /* 垂直居中 */
                 } 
                 .prank-text { 
-                    font-size: 6rem; 
+                    font-size: 6rem; /* 字体放大约 4 倍 */
                     font-weight: 700;
                     color: #30363d; 
                     font-family: 'Courier New', monospace; 
                     cursor: default; 
-                    user-select: none; 
+                    user-select: none; /* 防止选中透露链接 */
                 } 
+                /* 复用这个样式，让链接看起来完全像普通文本 */
                 a.prank-link { 
                     text-decoration: none; 
                     color: inherit; 
-                    cursor: text; 
+                    cursor: default; /* 鼠标保持箭头状，完美伪装 */
                 } 
                 a.prank-link:hover { 
                     color: inherit; 
                     text-decoration: none; 
                 }
             </style>
+            
             <div class="prank-container">
                 <span class="prank-text">
                     <a href="?go_home=1" target="_self" class="prank-link">你以为有什么</a><a href="?prank=1" target="_self" class="prank-link">？</a>
                 </span>
             </div>
             """, unsafe_allow_html=True)
-            
-    # 2. 已解锁状态：显示正常功能 + 首次进入弹窗
+        # --- 隐形链接交互逻辑 END ---
     else:
-        # === 新增逻辑：首次进入时的嘲讽弹窗 ===
+        # === 优化后的弹窗逻辑（CSS动画） ===
         if 'has_shown_popup' not in st.session_state:
             st.session_state.has_shown_popup = False
-            
+
         if not st.session_state.has_shown_popup:
-            # 创建一个空容器用于放置弹窗
-            popup_placeholder = st.empty()
-            # 注入全屏居中的 CSS 遮罩层
-            popup_placeholder.markdown("""
-            <div style="
+            # 注入 CSS 动画弹窗，自动淡出
+            st.markdown("""
+            <div id="mock-popup" style="
                 position: fixed; 
                 top: 0; left: 0; width: 100vw; height: 100vh; 
                 background: rgba(0,0,0,0.7); 
                 z-index: 99999; 
                 display: flex; justify-content: center; align-items: center;
                 backdrop-filter: blur(4px);
-                animation: fadeIn 0.3s ease-out;">
+                animation: fadeOut 0.5s ease-in 3s forwards; 
+                pointer-events: none; 
+            ">
                 <div style="
                     background: #161b22; 
                     border: 1px solid #30363d; 
@@ -850,18 +850,19 @@ elif st.session_state.page == 'mapping':
                     text-align: center; 
                     box-shadow: 0 20px 50px rgba(0,0,0,0.8);">
                     <div style="font-size: 100px; margin-bottom: 20px; line-height: 1;">🙄</div>
-                    <div style="font-size: 28px; color: #e6edf3; font-weight: bold; font-family: sans-serif;">哦，你找到我了</div>
+                    <div style="font-size: 28px; color: #e6edf3; font-weight: bold;">哦，你找到我了</div>
                 </div>
             </div>
             <style>
-                @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+                @keyframes fadeOut {
+                    0% { opacity: 1; }
+                    90% { opacity: 0; transform: scale(1); }
+                    100% { opacity: 0; transform: scale(0); visibility: hidden; } 
+                }
             </style>
             """, unsafe_allow_html=True)
-            
-            time.sleep(3)           # 停顿 3 秒
-            popup_placeholder.empty() # 清空弹窗
-            st.session_state.has_shown_popup = True # 标记为已显示，防止刷新重复弹
-        # =======================================
+            st.session_state.has_shown_popup = True 
+        # =================================
 
         all_templates = TemplateManager.get_all_names() 
         with st.sidebar:
@@ -988,4 +989,3 @@ elif st.session_state.page == 'mapping':
             with bc3:
                 if st.button("💾 确认生效", type="primary", use_container_width=True):
                     st.toast(f"模板 [{st.session_state.editing_template_name}] 已更新并校验通过", icon="✅")
-
