@@ -23,7 +23,7 @@ from openpyxl.styles import Border, Side, Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 # ==============================================================================
-# Zone 0: 全局配置 & 样式注入 (已修复侧边栏布局)
+# Zone 0: 全局配置 & 样式注入 (核心修复)
 # ==============================================================================
 st.set_page_config(page_title="淡藤财务报表 Pro", page_icon="😈", layout="wide", initial_sidebar_state="expanded")
 
@@ -58,45 +58,51 @@ def inject_css():
             background-color: rgba(255, 123, 114, 0.1) !important;
         }
         
-        /* --- 核心修复：侧边栏布局 --- */
-        /* 1. 选中侧边栏容器，强制高度撑满 */
-        section[data-testid="stSidebar"] > div {
-            height: 100vh;
-        }
-        /* 2. 选中侧边栏内部的主Flex容器，强制设置为纵向Flex布局 */
-        section[data-testid="stSidebar"] > div > div:last-child > div {
-            height: 98vh;
+        /* ==========================================================================
+           🚀 核心布局修复：侧边栏底部固定方案
+           ========================================================================== */
+        
+        /* 1. 强制侧边栏滚动区域撑满屏幕高度，并开启 Flex 布局 */
+        [data-testid="stSidebarUserContent"] > div:first-child {
+            height: 99vh;  /* 稍微留一点余量防止双滚动条 */
             display: flex;
             flex-direction: column;
-            /* 配合 margin-top: auto 使用 */
         }
 
-        /* --- 核心修改：让 tertiary 按钮完全融入背景，像个图标，并且居中 --- */
+        /* 2. 针对 Tertiary 按钮 (猫咪图标) 的特殊样式 */
         button[kind="tertiary"] {
             border: none !important; 
             background: transparent !important; 
             box-shadow: none !important;
-            font-size: 3rem !important; /* 图标放大 */
             padding: 0 !important;
-            width: 100% !important; /* 占满宽度以便居中 */
-            margin: 0 auto !important;
-            display: flex !important;
-            justify-content: center !important;
-            align-items: center !important;
-            opacity: 0.6;
-            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            width: 100% !important; 
+            margin: 0 !important;
         }
+
+        /* 3. 强制让按钮内部的 Emoji 文本居中 */
+        button[kind="tertiary"] > div[data-testid="stMarkdownContainer"] {
+            width: 100%;
+            display: flex;
+            justify-content: center !important; /* 水平居中 */
+            align-items: center !important;
+        }
+        
+        button[kind="tertiary"] > div[data-testid="stMarkdownContainer"] > p {
+            font-size: 3rem !important; /* 放大图标 */
+            margin: 0 !important;
+            padding: 0 !important;
+            text-align: center !important;
+        }
+
         button[kind="tertiary"]:hover { 
-            opacity: 1.0;
             transform: scale(1.25) rotate(5deg); 
             background: transparent !important;
             color: #58a6ff !important;
-        }
-        button[kind="tertiary"]:focus {
-            box-shadow: none !important;
-            outline: none !important;
+            transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
         
+        /* ========================================================================== */
+
         .sidebar-section { margin-bottom: 20px; }
         .sidebar-label { font-size: 0.85rem; color: #8b949e; margin-bottom: 5px; font-weight: 600; }
         .nav-header { font-size: 1.2rem; font-weight: bold; display:flex; align-items:center; height: 100%; }
@@ -571,14 +577,16 @@ class UIComponents:
                 st.write("") 
                 if st.button("重新运算", type="primary", use_container_width=True): trigger_recalc = True
             
-            # --- 布局优化修复：使用 margin-top: auto 配合 flex column 将按钮挤压到底部 ---
-            st.markdown('<div style="margin-top: auto;"></div>', unsafe_allow_html=True)
+            # ====== 核心修复逻辑：Flex 占位符 ======
+            # 利用父容器的 Flex 属性，这个空的 div 会自动撑开所有剩余空间
+            st.markdown('<div style="flex: 1;"></div>', unsafe_allow_html=True)
             
+            # 猫咪按钮
             if st.button("🐱", key="btn_cat_config", type="tertiary", help="进入规则配置中心"):
                 st.session_state.page = 'mapping'; st.session_state.prank_solved = False; st.rerun()
             
-            # 增加底部留白
-            st.markdown('<div style="height: 20px;"></div>', unsafe_allow_html=True)
+            # 底部留白
+            st.markdown('<div style="height: 15px;"></div>', unsafe_allow_html=True)
 
             return current_params, trigger_recalc
 
@@ -776,9 +784,7 @@ elif st.session_state.page == 'mapping':
         if c2.button("⬅️", key="back_from_prank", type="tertiary", use_container_width=True): st.session_state.page = 'main'; st.rerun()
         st.markdown("""<style>.prank-container { display: flex; justify-content: center; margin-top: 150px; } .prank-text { font-size: 2.5rem; color: #30363d; font-family: 'Courier New', monospace; cursor: default; } a.prank-link { text-decoration: none; color: inherit; cursor: text; } a.prank-link:hover { color: inherit; text-decoration: none; }</style><div class="prank-container"><span class="prank-text">你以为有什么<a href="?prank=1" target="_self" class="prank-link">？</a></span></div>""", unsafe_allow_html=True)
     else:
-        # --- FIXED NameError: Define all_templates here as well ---
         all_templates = TemplateManager.get_all_names() 
-        # ----------------------------------------------------------
         with st.sidebar:
             st.header("📏 规则模板管理")
             st.divider()
