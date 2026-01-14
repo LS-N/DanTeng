@@ -58,37 +58,35 @@ def inject_css():
             background-color: rgba(255, 123, 114, 0.1) !important;
         }
         
-        /* --- 核心修改：让 tertiary 按钮完全融入背景，像个图标 --- */
+        /* --- 核心修改：让 tertiary 按钮完全融入背景，像个图标，并且居中 --- */
         button[kind="tertiary"] {
             border: none !important; 
             background: transparent !important; 
             box-shadow: none !important;
-            font-size: 2rem !important;
+            font-size: 2.5rem !important; /* 图标大一点 */
             padding: 0 !important;
-            width: 100%;
-            display: flex;
-            justify-content: center;
+            width: 100% !important; /* 占满宽度以便居中 */
+            display: flex !important;
+            justify-content: center !important;
+            align-items: center !important;
             opacity: 0.7;
             transition: all 0.2s;
+            margin-top: 10px;
         }
         button[kind="tertiary"]:hover { 
             opacity: 1.0;
-            transform: scale(1.1); 
+            transform: scale(1.2); 
             background: transparent !important;
+            color: #58a6ff !important;
         }
         button[kind="tertiary"]:focus {
             box-shadow: none !important;
             outline: none !important;
         }
         
-        /* --- 侧边栏布局 Hack: 让侧边栏变成 Flex 容器，以便底部对齐 --- */
-        section[data-testid="stSidebar"] > div {
-            height: 100%;
-            display: flex;
-            flex-direction: column;
-        }
-        section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
-            flex: 1;
+        /* --- 侧边栏布局 Hack: 强制侧边栏垂直块占满屏幕高度 --- */
+        [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
+            min-height: 95vh; /* 强制高度 */
             display: flex;
             flex-direction: column;
         }
