@@ -58,22 +58,39 @@ def inject_css():
             background-color: rgba(255, 123, 114, 0.1) !important;
         }
         
-        /* --- 核心修改：让 tertiary 按钮看起来像纯图标 --- */
+        /* --- 核心修改：让 tertiary 按钮完全融入背景，像个图标 --- */
         button[kind="tertiary"] {
             border: none !important; 
             background: transparent !important; 
             box-shadow: none !important;
-            font-size: 2rem !important; /* 加大图标尺寸 */
+            font-size: 2rem !important;
             padding: 0 !important;
             width: 100%;
             display: flex;
             justify-content: center;
+            opacity: 0.7;
+            transition: all 0.2s;
         }
         button[kind="tertiary"]:hover { 
-            color: #58a6ff !important; 
+            opacity: 1.0;
+            transform: scale(1.1); 
             background: transparent !important;
-            transform: scale(1.1); /* 鼠标悬停微放大 */
-            transition: transform 0.1s;
+        }
+        button[kind="tertiary"]:focus {
+            box-shadow: none !important;
+            outline: none !important;
+        }
+        
+        /* --- 侧边栏布局 Hack: 让侧边栏变成 Flex 容器，以便底部对齐 --- */
+        section[data-testid="stSidebar"] > div {
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        section[data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
         }
         
         .sidebar-section { margin-bottom: 20px; }
@@ -550,7 +567,9 @@ class UIComponents:
                 st.write("") 
                 if st.button("重新运算", type="primary", use_container_width=True): trigger_recalc = True
             
-            st.markdown("---")
+            # --- 布局优化：插入一个弹性占位符，将下方的猫咪按钮顶到底部 ---
+            st.markdown('<div style="flex: 1;"></div>', unsafe_allow_html=True)
+            
             if st.button("🐱", key="btn_cat_config", type="tertiary", help="进入规则配置中心"):
                 st.session_state.page = 'mapping'; st.session_state.prank_solved = False; st.rerun()
             return current_params, trigger_recalc
