@@ -808,7 +808,7 @@ elif st.session_state.page == 'mapping':
                 a.prank-link { 
                     text-decoration: none; 
                     color: inherit; 
-                    cursor: text; /* 鼠标变为文本输入状，完美伪装 */
+                    cursor: default; /* 伪装 */
                 } 
                 a.prank-link:hover { 
                     color: inherit; 
@@ -949,3 +949,4 @@ elif st.session_state.page == 'mapping':
             with bc3:
                 if st.button("💾 确认生效", type="primary", use_container_width=True):
                     st.toast(f"模板 [{st.session_state.editing_template_name}] 已更新并校验通过", icon="✅")
+
