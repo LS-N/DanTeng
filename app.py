@@ -854,10 +854,10 @@ elif st.session_state.page == 'mapping':
             UIComponents.render_native_editor("系统配置 (只读)", df_lock_subset, True, [])
         with t2: 
             st.info("ℹ️ 结果表 2 为衍生汇总表，规则由系统锁定。")
-            UIComponents.render_native_editor("结算汇总表", df_c[df_c["所属表"]=="结果表2"], True, [], True)
+            UIComponents.render_native_editor("结算汇总表", df_c[df_c["所属表"]=="结果表2"], True, [])
         with t3: 
             st.info("ℹ️ 结果表 1 为衍生工时表，规则由系统锁定。")
-            UIComponents.render_native_editor("工时统计表", df_c[df_c["所属表"]=="结果表1"], True, [], True)
+            UIComponents.render_native_editor("工时统计表", df_c[df_c["所属表"]=="结果表1"], True, [])
 
         if not is_default:
             st.markdown("<div class='action-btn-zone'></div>", unsafe_allow_html=True)
