@@ -786,33 +786,39 @@ if st.session_state.page == 'main':
 elif st.session_state.page == 'mapping':
     if 'prank_solved' not in st.session_state: st.session_state.prank_solved = False
     if not st.session_state.prank_solved:
-        # 删除旧的返回按钮，新的返回逻辑包含在隐形链接中
-        # c1, c2 = st.columns([9, 1]); c1.write("")
-        # if c2.button("⬅️", key="back_from_prank", type="tertiary", use_container_width=True): st.session_state.page = 'main'; st.rerun()
-        
         # --- 隐形链接交互逻辑 START ---
+        # 移除旧按钮和旧文字，只保留一个全屏居中的大号隐形链接组
         st.markdown("""
             <style>
                 .prank-container { 
-                    /* margin-top: 150px;  删除顶部边距，使其靠上显示 */
+                    height: 80vh; /* 占据视窗高度，实现垂直居中 */
                     display: flex; 
-                    justify-content: center; 
-                    padding-top: 2rem; /* 添加一点顶部内边距 */
+                    justify-content: center; /* 水平居中 */
+                    align-items: center; /* 垂直居中 */
                 } 
                 .prank-text { 
-                    font-size: 2rem; /* 调整字体大小 */
+                    font-size: 6rem; /* 字体放大约 4 倍 (原为 2rem - 2.5rem 左右) */
+                    font-weight: 700;
                     color: #30363d; 
                     font-family: 'Courier New', monospace; 
                     cursor: default; 
+                    user-select: none; /* 防止选中透露链接 */
                 } 
                 /* 复用这个样式，让链接看起来完全像普通文本 */
-                a.prank-link { text-decoration: none; color: inherit; cursor: text; } 
-                a.prank-link:hover { color: inherit; text-decoration: none; }
+                a.prank-link { 
+                    text-decoration: none; 
+                    color: inherit; 
+                    cursor: text; /* 鼠标变为文本输入状，完美伪装 */
+                } 
+                a.prank-link:hover { 
+                    color: inherit; 
+                    text-decoration: none; 
+                }
             </style>
             
             <div class="prank-container">
                 <span class="prank-text">
-                    <a href="?go_home=1" class="prank-link">你以为有什么</a><a href="?prank=1" class="prank-link">？</a>
+                    <a href="?go_home=1" target="_self" class="prank-link">你以为有什么</a><a href="?prank=1" target="_self" class="prank-link">？</a>
                 </span>
             </div>
             """, unsafe_allow_html=True)
