@@ -10,36 +10,34 @@ import re
 # ==============================================================================
 try:
     import docx
-    from docx.shared import Pt, Cm, RGBColor
+    from docx.shared import Pt, Cm
     from docx.oxml.ns import qn
     from docx.oxml import OxmlElement
-    from docx.enum.text import WD_ALIGN_PARAGRAPH, WD_LINE_SPACING
-    from docx.enum.table import WD_ALIGN_VERTICAL, WD_ROW_HEIGHT_RULE
+    from docx.enum.text import WD_ALIGN_PARAGRAPH
+    from docx.enum.table import WD_ALIGN_VERTICAL
     HAS_DOCX = True
 except ImportError:
     HAS_DOCX = False
 
-from openpyxl.styles import Border, Side, Alignment, Font, PatternFill
+from openpyxl.styles import Border, Side, Alignment, Font
 from openpyxl.utils import get_column_letter
 
 # ==============================================================================
-# Zone 0: 全局配置 & 路由控制 & 样式注入
+# Zone 0: 全局配置 & 路由控制
 # ==============================================================================
 st.set_page_config(page_title="淡藤财务报表 Pro", page_icon="😈", layout="wide", initial_sidebar_state="expanded")
 
-# --- 核心路由逻辑：区分不同的跳转指令 ---
+# --- 核心路由逻辑 ---
 if "p" in st.query_params:
     mode = st.query_params["p"]
-    
     if mode == "home":
         st.session_state.page = 'main'
     elif mode == "void":
         st.session_state.page = 'mapping'
-        st.session_state.prank_solved = False # 强制锁住，进入虚空
+        st.session_state.prank_solved = False # 进入虚空
     elif mode == "unlock":
         st.session_state.page = 'mapping'
-        st.session_state.prank_solved = True  # 解锁，显示真身
-        
+        st.session_state.prank_solved = True  # 解锁配置
     st.query_params.clear()
     st.rerun()
 
@@ -48,128 +46,92 @@ def inject_css():
     <style>
         :root { --bg-color: #0d1117; --card-bg: #161b22; --text: #c9d1d9; --border-color: #30363d; }
         .stApp { background-color: var(--bg-color); color: var(--text); }
-        button p { white-space: nowrap !important; }
-
+        
+        /* 侧边栏布局优化 */
+        section[data-testid="stSidebar"] > div { height: 100vh; }
+        [data-testid="stSidebarUserContent"] > div:first-child { height: 99vh; display: flex; flex-direction: column; }
+        
+        /* 通用样式 */
         .file-name { font-weight: 600; font-size: 14px; color: #e6edf3; display: block; line-height: 1.2; }
         .file-stats { font-size: 12px; color: #8b949e; display: block; margin-top: 2px; }
         .file-icon { font-size: 24px; display: flex; align-items: center; justify-content: center; height: 100%; }
+        .nav-header { font-size: 1.2rem; font-weight: bold; display:flex; align-items:center; height: 100%; }
         
-        div[data-testid="column"] { overflow: visible !important; }
+        /* 按钮样式微调 */
         div[data-testid="column"] button[kind="secondary"] {
             border: 1px solid rgba(255,255,255,0.1) !important;
             background-color: rgba(255,255,255,0.05) !important;
             color: #c9d1d9 !important;
-            padding: 0px !important; margin: 0px !important;
-            height: 42px !important; width: 100% !important; min-width: 40px !important;
-            display: flex !important; align-items: center !important; justify-content: center !important;
-            float: none !important; border-radius: 6px !important; transition: all 0.2s;
+            width: 100% !important;
         }
         div[data-testid="column"] button[kind="secondary"]:hover {
             color: #ff7b72 !important; border-color: #ff7b72 !important;
             background-color: rgba(255, 123, 114, 0.1) !important;
         }
-        
-        /* 侧边栏布局 */
-        [data-testid="stSidebarUserContent"] > div:first-child {
-            height: 99vh;
-            display: flex;
-            flex-direction: column;
-        }
 
-        .sidebar-section { margin-bottom: 20px; }
-        .sidebar-label { font-size: 0.85rem; color: #8b949e; margin-bottom: 5px; font-weight: 600; }
-        .nav-header { font-size: 1.2rem; font-weight: bold; display:flex; align-items:center; height: 100%; }
-        .info-bar { background-color: rgba(56, 139, 253, 0.1); border-left: 4px solid #58a6ff; color: #c9d1d9; padding: 8px 15px; margin-bottom: 20px; font-size: 0.9rem; border-radius: 4px; }
+        /* 状态框样式 */
         .error-box { border: 1px solid #ff7b72; background-color: rgba(255, 123, 114, 0.1); padding: 15px; border-radius: 6px; margin-bottom: 15px; }
-        .balance-box-ok { border: 1px solid #238636; background-color: rgba(35, 134, 54, 0.1); padding: 10px; border-radius: 6px; margin-bottom: 15px; color: #3fb950; }
-        .balance-box-err { border: 1px solid #da3633; background-color: rgba(218, 54, 51, 0.1); padding: 10px; border-radius: 6px; margin-bottom: 15px; color: #f85149; font-weight: bold;}
+        .balance-box-ok { border: 1px solid #238636; background-color: rgba(35, 134, 54, 0.1); padding: 10px; border-radius: 6px; color: #3fb950; }
+        .balance-box-err { border: 1px solid #da3633; background-color: rgba(218, 54, 51, 0.1); padding: 10px; border-radius: 6px; color: #f85149; font-weight: bold;}
 
-        div[data-baseweb="select"] > div {
-            justify-content: center !important;
-            text-align: center !important;
-        }
-        div[data-baseweb="select"] span {
-            width: 100%;
-            text-align: center;
-        }
+        /* 下拉框居中 */
+        div[data-baseweb="select"] > div { justify-content: center !important; text-align: center !important; }
         
-        /* --- 修复恶魔链接样式的核心 CSS --- */
-        a.trigger-link, a.trigger-link:hover, a.trigger-link:visited, a.trigger-link:active {
-            text-decoration: none !important; /* 强制去下划线 */
-            color: inherit !important;        /* 强制继承文字颜色，不去变蓝 */
-            border: none !important;          /* 防止有边框 */
+        /* --- 隐形链接核心样式 (去除下划线、变色、手型) --- */
+        a.trigger-link, a.trigger-link:hover, a.trigger-link:visited, a.trigger-link:active,
+        a.prank-link, a.prank-link:hover {
+            text-decoration: none !important;
+            color: inherit !important;
+            border: none !important;
             box-shadow: none !important;
-            cursor: default !important;       /* 鼠标不变手型 */
-            margin-right: 10px;
+            cursor: default !important; /* 关键：伪装成背景 */
         }
+        .trigger-link { margin-right: 10px; }
     </style>
     """, unsafe_allow_html=True)
 
 # ==============================================================================
-# Zone A: 纯逻辑层
+# Zone A: 纯逻辑层 (数据 & 文档处理)
 # ==============================================================================
 class TemplateManager:
     DEFAULT_NAME = "默认模板"
-
     @staticmethod
     def init_defaults():
         if 'templates' not in st.session_state:
-            st.session_state.templates = {
-                TemplateManager.DEFAULT_NAME: DataEngine.get_default_config()
-            }
+            st.session_state.templates = {TemplateManager.DEFAULT_NAME: DataEngine.get_default_config()}
         if 'active_template_name' not in st.session_state:
             st.session_state.active_template_name = TemplateManager.DEFAULT_NAME
         if 'editing_template_name' not in st.session_state:
             st.session_state.editing_template_name = TemplateManager.DEFAULT_NAME
         if 'params' not in st.session_state:
-             st.session_state.params = {
-                'price': 1600, 
-                'hours_limit': 100, 
-                'sub_tag': '差旅补助', 
-                'period': '2025Q1'
-             }
+             st.session_state.params = {'price': 1600, 'hours_limit': 100, 'sub_tag': '差旅补助', 'period': '2025Q1'}
 
     @staticmethod
-    def get_template(name):
-        return st.session_state.templates.get(name, DataEngine.get_default_config())
-
+    def get_template(name): return st.session_state.templates.get(name, DataEngine.get_default_config())
     @staticmethod
-    def save_template(name, df_config):
-        st.session_state.templates[name] = df_config
-
+    def save_template(name, df_config): st.session_state.templates[name] = df_config
     @staticmethod
     def delete_template(name):
         if name in st.session_state.templates and name != TemplateManager.DEFAULT_NAME:
             del st.session_state.templates[name]
-            if st.session_state.active_template_name == name:
-                st.session_state.active_template_name = TemplateManager.DEFAULT_NAME
-            if st.session_state.editing_template_name == name:
-                st.session_state.editing_template_name = TemplateManager.DEFAULT_NAME
+            if st.session_state.active_template_name == name: st.session_state.active_template_name = TemplateManager.DEFAULT_NAME
+            if st.session_state.editing_template_name == name: st.session_state.editing_template_name = TemplateManager.DEFAULT_NAME
             return True
         return False
-
     @staticmethod
-    def get_all_names():
-        return list(st.session_state.templates.keys())
+    def get_all_names(): return list(st.session_state.templates.keys())
 
 class DataEngine:
     @staticmethod
     def get_quarter_str(text):
         if not text: return "2025Qx"
         s = str(text)
-        year_match = re.search(r'(\d{4})', s)
-        year = year_match.group(1) if year_match else "2025"
+        year = re.search(r'(\d{4})', s).group(1) if re.search(r'(\d{4})', s) else "2025"
         quarter = "Q1" 
-        if '一' in s: quarter = "Q1"
-        elif '二' in s: quarter = "Q2"
-        elif '三' in s: quarter = "Q3"
-        elif '四' in s: quarter = "Q4"
-        else:
-            rem = s.replace(year, '')
-            if '1' in rem: quarter = "Q1"
-            elif '2' in rem: quarter = "Q2"
-            elif '3' in rem: quarter = "Q3"
-            elif '4' in rem: quarter = "Q4"
+        if '一' in s or '1' in s.replace(year,''): quarter = "Q1"
+        elif '二' in s or '2' in s.replace(year,''): quarter = "Q2"
+        elif '三' in s or '3' in s.replace(year,''): quarter = "Q3"
+        elif '四' in s or '4' in s.replace(year,''): quarter = "Q4"
         return f"{year}{quarter}"
 
     @staticmethod
@@ -408,124 +370,61 @@ class DataEngine:
 class WordGenerator:
     @staticmethod
     def get_visual_length(text):
-        """
-        计算字符串的视觉长度：
-        中文/全角符号 = 1.8 单位
-        数字/英文 = 1.0 单位
-        """
         length = 0
-        s_text = str(text)
-        for char in s_text:
-            if '\u4e00' <= char <= '\u9fff': # 中文范围
-                length += 1.8
-            else:
-                length += 1.0
+        for char in str(text):
+            length += 1.8 if '\u4e00' <= char <= '\u9fff' else 1.0
         return length
 
     @staticmethod
     def set_cell_style(cell, text, font_size=9, bold=False, align="center"):
-        # 清空原有内容
         cell.text = ""
         paragraph = cell.paragraphs[0]
-        
-        # --- 核心修改：强制所有内容全居中 ---
-        # 之前有自动左对齐逻辑，现已全部移除，满足您的居中需求
-        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER # 强制全部居中
         run = paragraph.add_run(str(text))
         run.font.bold = bold; run.font.size = Pt(font_size)
         try: run.font.name = 'SimSun'; run._element.rPr.rFonts.set(qn('w:eastAsia'), 'SimSun')
         except: pass
-        
-        # 垂直居中
         cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
 
     @staticmethod
     def set_row_height(row, height_cm):
         tr = row._tr; trPr = tr.get_or_add_trPr(); trHeight = OxmlElement('w:trHeight')
-        # 使用 atLeast (最小值) 而不是 exact (固定值)，防止内容换行后被遮挡
-        trHeight.set(qn('w:val'), str(int(height_cm * 567)))
-        trHeight.set(qn('w:hRule'), "atLeast") 
-        trPr.append(trHeight)
+        trHeight.set(qn('w:val'), str(int(height_cm * 567))); trHeight.set(qn('w:hRule'), "atLeast"); trPr.append(trHeight)
 
     @staticmethod
     def set_table_width_100(table):
-        """强制表格宽度铺满页面"""
         tbl_pr = table._element.tblPr
         tbl_w = tbl_pr.find(qn('w:tblW'))
-        if tbl_w is None:
-            tbl_w = OxmlElement('w:tblW')
-            tbl_pr.append(tbl_w)
-        # 5000 pct 代表 100% 宽度
-        tbl_w.set(qn('w:w'), '5000')
-        tbl_w.set(qn('w:type'), 'pct')
+        if tbl_w is None: tbl_w = OxmlElement('w:tblW'); tbl_pr.append(tbl_w)
+        tbl_w.set(qn('w:w'), '5000'); tbl_w.set(qn('w:type'), 'pct')
 
     @staticmethod
     def calculate_smart_widths(group_df, headers):
-        """
-        智能列宽分配算法：
-        1. 扫描该组所有数据，找出每一列的最长内容。
-        2. 根据最长内容按比例分配页面总宽度。
-        """
-        # A4纸除去左右边距(1.5cm * 2)后，可用宽度约为 18cm
-        # 我们设定稍微保守一点的总宽，保证绝对不换行出界
         TOTAL_PAGE_WIDTH = 17.6 
-        
         col_count = len(headers)
         max_visual_lens = [0.0] * col_count
-
-        # 1. 先把表头的长度算进去
         for i, h in enumerate(headers):
-            # 表头可能有换行符，取最长的一行
             lines = str(h).split('\n')
-            max_line_len = max([WordGenerator.get_visual_length(l) for l in lines])
-            max_visual_lens[i] = max(max_visual_lens[i], max_line_len)
-
-        # 2. 遍历所有数据行，更新每一列的最大视觉长度
+            max_visual_lens[i] = max([WordGenerator.get_visual_length(l) for l in lines])
         for _, row in group_df.iterrows():
-            # 注意：这里的顺序必须和 generate 方法中写入的顺序完全一致
-            vals = [
-                str(row['人员']), 
-                str(row['人事范围']), 
-                str(row['所属项目']), 
-                str(row['合同主体']), 
-                str(row['销售人员']), 
-                str(row['销售部门']),
-                f"{row['支持时间（人天）']:.2f}",
-                f"{row['人力费用']:.2f}",
-                f"{row['差旅补助']:.2f}",
-                f"{row['差旅费控平台']:.2f}",
-                f"{row['结算费用合计']:.2f}"
-            ]
-            for i, val in enumerate(vals):
-                max_visual_lens[i] = max(max_visual_lens[i], WordGenerator.get_visual_length(val))
-
-        # 3. 增加一点缓冲 padding (每个单元格左右留白)
+            vals = [str(row['人员']), str(row['人事范围']), str(row['所属项目']), str(row['合同主体']), str(row['销售人员']), str(row['销售部门']), f"{row['支持时间（人天）']:.2f}", f"{row['人力费用']:.2f}", f"{row['差旅补助']:.2f}", f"{row['差旅费控平台']:.2f}", f"{row['结算费用合计']:.2f}"]
+            for i, val in enumerate(vals): max_visual_lens[i] = max(max_visual_lens[i], WordGenerator.get_visual_length(val))
         max_visual_lens = [x + 2.0 for x in max_visual_lens]
-
-        # 4. 计算权重并分配宽度
         total_score = sum(max_visual_lens)
         final_widths = []
-        
         for score in max_visual_lens:
-            # 比例分配：(该列最大长度 / 所有列总长度) * 页面总宽
             width = (score / total_score) * TOTAL_PAGE_WIDTH
-            
-            # 5. 安全限制：防止列太窄或太宽
-            if width < 0.9: width = 0.9 # 最小宽度 0.9cm
+            if width < 0.9: width = 0.9 
             final_widths.append(width)
-
         return final_widths
 
     @staticmethod
     def _create_base_doc(purchase_comp, sales_comp, dept_name, period_text, dynamic_widths):
         doc = docx.Document()
         section = doc.sections[0]
-        # 调整页边距，最大化利用空间
-        section.top_margin = Cm(1.5); section.bottom_margin = Cm(1.5)
-        section.left_margin = Cm(1.5); section.right_margin = Cm(1.5)
+        section.top_margin = Cm(1.5); section.bottom_margin = Cm(1.5); section.left_margin = Cm(1.5); section.right_margin = Cm(1.5)
         
-        # --- 标题 ---
+        # 标题
         title_line_1 = f"{purchase_comp}与云软件事业部-实施交付部"
         title_line_2 = f"{period_text}项目交付与运维费用结算账单"
         p1 = doc.add_paragraph(); p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -538,17 +437,12 @@ class WordGenerator:
         except: pass
         doc.add_paragraph() 
         
-        # --- 表格 0：结算账单 ---
-        # 需求：结果文档4中的结算账单表格要和费用详单表格一样，都是根据窗口调整
+        # 表格 0
         table0 = doc.add_table(rows=6, cols=10); table0.style = 'Table Grid'
         WordGenerator.set_table_width_100(table0)
-        
-        # 给结算汇总表也分配一个相对合理的固定比例，保证铺满
-        # 总和约 17.6
         t0_widths = [1.5, 1.5, 1.5, 1.8, 1.8, 1.8, 1.8, 2.0, 1.5, 2.4]
         for row in table0.rows:
             for idx, width in enumerate(t0_widths): row.cells[idx].width = Cm(width)
-            
         WordGenerator.set_row_height(table0.rows[0], 1.63)
         c0 = table0.rows[0].cells[0].merge(table0.rows[0].cells[9])
         WordGenerator.set_cell_style(c0, title_line_1 + "\n" + title_line_2, font_size=10, bold=True)
@@ -563,7 +457,7 @@ class WordGenerator:
         WordGenerator.set_row_height(table0.rows[3], 0.92)
         WordGenerator.set_row_height(table0.rows[4], 1.13)
         WordGenerator.set_cell_style(table0.rows[4].cells[0].merge(table0.rows[4].cells[2]), "项目所属区域")
-        WordGenerator.set_cell_style(table0.rows[4].cells[3].merge(table0.rows[4].cells[9]), str(dept_name), align="left") # 部门名称左对齐更符合阅读习惯
+        WordGenerator.set_cell_style(table0.rows[4].cells[3].merge(table0.rows[4].cells[9]), str(dept_name), align="left")
         WordGenerator.set_row_height(table0.rows[5], 4.17)
         WordGenerator.set_cell_style(table0.rows[5].cells[0].merge(table0.rows[5].cells[2]), "项目所属\n区域销售\n确认")
         c_sign = table0.rows[5].cells[3].merge(table0.rows[5].cells[9]); c_sign.text = ""
@@ -573,61 +467,47 @@ class WordGenerator:
         p_date = c_sign.add_paragraph("日期：    年    月    日        "); p_date.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         try: p_date.runs[0].font.name = 'SimSun'; p_date.runs[0]._element.rPr.rFonts.set(qn('w:eastAsia'), 'SimSun')
         except: pass
-        
         doc.add_paragraph("\n")
         
-        # --- 补全标题：费用详单 ---
+        # 费用详单标题
         p_detail_header = doc.add_paragraph()
         run_detail = p_detail_header.add_run("费用详单：")
-        run_detail.font.bold = True
-        run_detail.font.size = Pt(11)
+        run_detail.font.bold = True; run_detail.font.size = Pt(11)
         try: run_detail.font.name = 'SimSun'; run_detail._element.rPr.rFonts.set(qn('w:eastAsia'), 'SimSun')
         except: pass
         
-        # --- 表格 1：费用详单 (使用动态计算出的 widths) ---
+        # 表格 1
         table1 = doc.add_table(rows=1, cols=11); table1.style = 'Table Grid'
         WordGenerator.set_table_width_100(table1)
-        
         for row in table1.rows:
             for idx, width in enumerate(dynamic_widths): row.cells[idx].width = Cm(width)
-            
         headers_1 = ['人员', '人事\n范围', '项目\n名称', '合同\n名称', '销售\n人员', '销售所\n在大区', '支持\n人天', '人力\n费用', '差旅\n补助', '差旅平\n台费用', '总费用\n（元）']
         for i, text in enumerate(headers_1): WordGenerator.set_cell_style(table1.rows[0].cells[i], text, bold=True)
         return doc, table0, table1
 
     @staticmethod
     def generate(df_t3, period_str):
-        if not HAS_DOCX:
-            return {}, "缺少 python-docx 库，无法生成 Word 文件"
-        if df_t3 is None or df_t3.empty:
-            return {}, "数据为空"
-            
+        if not HAS_DOCX: return {}, "缺少 python-docx 库"
+        if df_t3 is None or df_t3.empty: return {}, "数据为空"
         req = ['合同主体', '人事范围', '销售部门']
-        if not all(c in df_t3.columns for c in req):
-            return {}, f"Result T3 缺少必要的列: {req}"
+        if not all(c in df_t3.columns for c in req): return {}, f"缺少列: {req}"
 
         files_dict = {}
         grouped = df_t3.groupby(req)
-        
-        # 定义表头，用于传入算法计算最大长度
         header_list = ['人员', '人事范围', '项目名称', '合同主体', '销售人员', '销售所在大区', '支持人天', '人力费用', '差旅补助', '差旅平台费用', '总费用']
 
         for (purch_comp, sales_comp, dept_name), group in grouped:
-            # === 核心调用：计算智能列宽 ===
             smart_widths = WordGenerator.calculate_smart_widths(group, header_list)
-            
             doc, table0, table1 = WordGenerator._create_base_doc(purch_comp, sales_comp, dept_name, period_str, smart_widths)
             
             for _, row in group.iterrows():
                 cells = table1.add_row().cells
-                # 全部使用默认 align="center" (在 set_cell_style 中已改为强制居中)
                 WordGenerator.set_cell_style(cells[0], row['人员'])
                 WordGenerator.set_cell_style(cells[1], row['人事范围'])
                 WordGenerator.set_cell_style(cells[2], row['所属项目'])
                 WordGenerator.set_cell_style(cells[3], row['合同主体'])
                 WordGenerator.set_cell_style(cells[4], row['销售人员'])
                 WordGenerator.set_cell_style(cells[5], row['销售部门']) 
-                
                 WordGenerator.set_cell_style(cells[6], f"{row['支持时间（人天）']:.2f}")
                 WordGenerator.set_cell_style(cells[7], f"{row['人力费用']:.2f}")
                 WordGenerator.set_cell_style(cells[8], f"{row['差旅补助']:.2f}")
@@ -670,7 +550,6 @@ class UIComponents:
             st.session_state.params['price'] = st.number_input("人力单价 (元/天)", value=st.session_state.params['price'], step=100)
             if threshold_error_flag: st.error("🚨 请调整工时", icon=None)
             st.session_state.params['hours_limit'] = st.number_input("工时阈值 (小时)", value=st.session_state.params['hours_limit'])
-            # st.session_state.params['sub_tag'] 已在 init_defaults 中硬编码，无需显示输入框
             st.session_state.params['period'] = st.text_input("结算周期文案", value=st.session_state.params['period'])
             
             current_params = st.session_state.params.copy()
@@ -751,20 +630,14 @@ class UIComponents:
     @staticmethod
     def render_native_editor(desc, subset, is_readonly, all_options):
         if subset.empty: return None
-        
         column_config = {
             "序号": st.column_config.TextColumn("序号", width="small", disabled=True),
             "目标字段": st.column_config.TextColumn("目标字段", disabled=True, width="medium"),
             "源表": st.column_config.TextColumn("源表", disabled=True),
             "逻辑说明": st.column_config.TextColumn("逻辑说明", disabled=True, width="large"),
         }
-        
-        if is_readonly:
-            column_config["匹配字段"] = st.column_config.TextColumn("匹配字段", disabled=True)
-        else:
-            column_config["匹配字段"] = st.column_config.SelectboxColumn(
-                "匹配字段", options=all_options, width="medium", required=True
-            )
+        if is_readonly: column_config["匹配字段"] = st.column_config.TextColumn("匹配字段", disabled=True)
+        else: column_config["匹配字段"] = st.column_config.SelectboxColumn("匹配字段", options=all_options, width="medium", required=True)
         
         calc_height = (len(subset) + 1) * 35 + 10
         editor_key = f"editor_{desc}_{subset.iloc[0]['所属表']}_{st.session_state.editing_template_name}"
@@ -792,46 +665,28 @@ inject_css()
 if st.session_state.page == 'main':
     current_params, manual_recalc = UIComponents.render_sidebar(st.session_state.threshold_error_flag)
     
-    # === 新的标题逻辑：恶魔Emoji就是入口 ===
     st.markdown("""
         <style>
-            .title-container {
-                font-size: 3rem;
-                font-weight: 700;
-                display: flex;
-                align-items: center;
-                margin-bottom: 1rem;
-            }
+            .title-container { font-size: 3rem; font-weight: 700; display: flex; align-items: center; margin-bottom: 1rem; }
         </style>
         <div class="title-container">
             <a href="?p=void" target="_self" class="trigger-link">😈</a>
             <span>淡藤财务报表 Pro</span>
         </div>
     """, unsafe_allow_html=True)
-    # =======================================
 
     with st.container(border=True):
         st.markdown("### 📂 数据源控制台")
         st.divider()
-        
-        # --- Template Selector ---
         all_templates = TemplateManager.get_all_names()
         if st.session_state.active_template_name not in all_templates: 
             st.session_state.active_template_name = TemplateManager.DEFAULT_NAME
         
         c_sel, c_empty = st.columns([1.5, 8.5])
         with c_sel:
-            selected_tpl = st.selectbox(
-                "计算规则模板", 
-                options=all_templates, 
-                index=all_templates.index(st.session_state.active_template_name), 
-                key="main_template_selector", 
-                label_visibility="collapsed"
-            )
-            
+            selected_tpl = st.selectbox("计算规则模板", options=all_templates, index=all_templates.index(st.session_state.active_template_name), key="main_template_selector", label_visibility="collapsed")
         if selected_tpl != st.session_state.active_template_name:
             st.session_state.active_template_name = selected_tpl; st.session_state.is_calculated = False; st.rerun()
-        # -------------------------
 
         c1, c2 = st.columns(2)
         with c1: UIComponents.render_file_slot('A', "Source A: 投入明细 (工时)", st.session_state.data_store)
@@ -853,9 +708,7 @@ if st.session_state.page == 'main':
             active_config = TemplateManager.get_template(st.session_state.active_template_name)
             with st.spinner(f"🚀 正在使用 [{st.session_state.active_template_name}] 模板计算..."):
                 st.session_state.threshold_error_flag = False
-                errs, df_a, df_b = DataEngine.validate(
-                    st.session_state.data_store['A']['df'].copy(), st.session_state.data_store['B']['df'].copy(), active_config, current_params['hours_limit']
-                )
+                errs, df_a, df_b = DataEngine.validate(st.session_state.data_store['A']['df'].copy(), st.session_state.data_store['B']['df'].copy(), active_config, current_params['hours_limit'])
                 if errs:
                     st.session_state.error_report = pd.DataFrame(errs); st.session_state.is_calculated = False; st.session_state.last_run_params = current_params.copy(); st.rerun()
                 else:
@@ -864,11 +717,7 @@ if st.session_state.page == 'main':
                         st.session_state.balance_check = DataEngine.verify_balance(df_a, df_b, res, active_config)
                         q_str = DataEngine.get_quarter_str(current_params['period'])
                         t2_title = f"{q_str[2:]}实施交付部项目投入考核调整总表"
-                        excel_files_dict = {
-                            "t1": DataEngine.to_bytes(res['t1']),
-                            "t2": DataEngine.to_bytes(res['t2'], title=t2_title),
-                            "t3": DataEngine.to_bytes(res['t3'])
-                        }
+                        excel_files_dict = {"t1": DataEngine.to_bytes(res['t1']), "t2": DataEngine.to_bytes(res['t2'], title=t2_title), "t3": DataEngine.to_bytes(res['t3'])}
                         st.session_state.result_files = excel_files_dict
                         word_files_dict, err_msg = WordGenerator.generate(res['t3'], current_params['period'])
                         if err_msg: st.warning(f"Word生成受限: {err_msg}")
@@ -893,83 +742,27 @@ if st.session_state.page == 'main':
 elif st.session_state.page == 'mapping':
     if 'prank_solved' not in st.session_state: st.session_state.prank_solved = False
     if not st.session_state.prank_solved:
-        # --- 隐形链接交互逻辑 START ---
-        # 移除旧按钮和旧文字，只保留一个全屏居中的大号隐形链接组
-        # 关键修改：cursor: default 让鼠标不变成手型
         st.markdown("""
             <style>
-                .prank-container { 
-                    height: 80vh; /* 占据视窗高度，实现垂直居中 */
-                    display: flex; 
-                    justify-content: center; /* 水平居中 */
-                    align-items: center; /* 垂直居中 */
-                } 
-                .prank-text { 
-                    font-size: 6rem; /* 字体放大约 4 倍 */
-                    font-weight: 700;
-                    color: #30363d; 
-                    font-family: 'Courier New', monospace; 
-                    cursor: default; 
-                    user-select: none; /* 防止选中透露链接 */
-                } 
-                /* 复用这个样式，让链接看起来完全像普通文本 */
-                a.prank-link { 
-                    text-decoration: none; 
-                    color: inherit; 
-                    cursor: default; /* 鼠标保持箭头状，完美伪装 */
-                } 
-                a.prank-link:hover { 
-                    color: inherit; 
-                    text-decoration: none; 
-                }
+                .prank-container { height: 80vh; display: flex; justify-content: center; align-items: center; } 
+                .prank-text { font-size: 6rem; font-weight: 700; color: #30363d; font-family: 'Courier New', monospace; cursor: default; user-select: none; } 
+                a.prank-link { text-decoration: none; color: inherit; cursor: default; } 
+                a.prank-link:hover { color: inherit; text-decoration: none; }
             </style>
-            
-            <div class="prank-container">
-                <span class="prank-text">
-                    <a href="?p=home" target="_self" class="prank-link">你以为有什么</a><a href="?p=unlock" target="_self" class="prank-link">？</a>
-                </span>
-            </div>
+            <div class="prank-container"><span class="prank-text"><a href="?p=home" target="_self" class="prank-link">你以为有什么</a><a href="?p=unlock" target="_self" class="prank-link">？</a></span></div>
             """, unsafe_allow_html=True)
-        # --- 隐形链接交互逻辑 END ---
     else:
-        # === 优化后的弹窗逻辑（CSS动画） ===
-        if 'has_shown_popup' not in st.session_state:
-            st.session_state.has_shown_popup = False
-
+        if 'has_shown_popup' not in st.session_state: st.session_state.has_shown_popup = False
         if not st.session_state.has_shown_popup:
-            # 注入 CSS 动画弹窗，自动淡出
             st.markdown("""
-            <div id="mock-popup" style="
-                position: fixed; 
-                top: 0; left: 0; width: 100vw; height: 100vh; 
-                background: rgba(0,0,0,0.7); 
-                z-index: 99999; 
-                display: flex; justify-content: center; align-items: center;
-                backdrop-filter: blur(4px);
-                animation: fadeOut 0.5s ease-in 3s forwards; 
-                pointer-events: none; 
-            ">
-                <div style="
-                    background: #161b22; 
-                    border: 1px solid #30363d; 
-                    border-radius: 16px; 
-                    padding: 50px 80px; 
-                    text-align: center; 
-                    box-shadow: 0 20px 50px rgba(0,0,0,0.8);">
-                    <div style="font-size: 100px; margin-bottom: 20px; line-height: 1;">🙄</div>
-                    <div style="font-size: 28px; color: #e6edf3; font-weight: bold;">哦，你找到我了</div>
+            <div id="mock-popup" style="position: fixed; top: 0; left: 0; width: 100vw; height: 100vh; background: rgba(0,0,0,0.7); z-index: 99999; display: flex; justify-content: center; align-items: center; backdrop-filter: blur(4px); animation: fadeOut 0.5s ease-in 3s forwards; pointer-events: none;">
+                <div style="background: #161b22; border: 1px solid #30363d; border-radius: 16px; padding: 50px 80px; text-align: center; box-shadow: 0 20px 50px rgba(0,0,0,0.8);">
+                    <div style="font-size: 100px; margin-bottom: 20px; line-height: 1;">🙄</div><div style="font-size: 28px; color: #e6edf3; font-weight: bold;">哦，你找到我了</div>
                 </div>
             </div>
-            <style>
-                @keyframes fadeOut {
-                    0% { opacity: 1; }
-                    90% { opacity: 0; transform: scale(1); }
-                    100% { opacity: 0; transform: scale(0); visibility: hidden; } 
-                }
-            </style>
+            <style>@keyframes fadeOut { 0% { opacity: 1; } 90% { opacity: 0; transform: scale(1); } 100% { opacity: 0; transform: scale(0); visibility: hidden; } }</style>
             """, unsafe_allow_html=True)
             st.session_state.has_shown_popup = True 
-        # =================================
 
         all_templates = TemplateManager.get_all_names() 
         with st.sidebar:
@@ -981,7 +774,6 @@ elif st.session_state.page == 'mapping':
                 if st.button(tpl_name, key=f"btn_edit_{tpl_name}", type=btn_type, use_container_width=True):
                     st.session_state.editing_template_name = tpl_name; st.session_state.sample_store = {'A': None, 'B': None}; st.rerun()
             st.divider()
-            
             with st.expander("➕ 新建模板", expanded=False):
                 new_tpl_name = st.text_input("模板名称", placeholder="1-8个字符", max_chars=8)
                 if st.button("创建", key="create_new_tpl", use_container_width=True):
@@ -994,16 +786,12 @@ elif st.session_state.page == 'mapping':
                     elif new_tpl_name: st.error("名称已存在")
 
         c1, c2 = st.columns([8, 2], vertical_alignment="center")
-        
         is_default = (st.session_state.editing_template_name == TemplateManager.DEFAULT_NAME)
-        if not is_default:
-            c1.markdown(f"<div class='nav-header'>📏 正在编辑: {st.session_state.editing_template_name}</div>", unsafe_allow_html=True)
-        
+        if not is_default: c1.markdown(f"<div class='nav-header'>📏 正在编辑: {st.session_state.editing_template_name}</div>", unsafe_allow_html=True)
         if c2.button("⬅️ 返回主页", type="tertiary", use_container_width=True): st.session_state.page = 'main'; st.rerun()
         st.markdown("<hr style='margin-top:0; border-color:#30363d;'>", unsafe_allow_html=True)
         
         cols_a = []; cols_b = []
-        
         if not is_default:
             with st.expander("📂 上传样例数据 (用于提取列名，不参与计算)", expanded=True):
                 st.caption("提示：此处上传的文件仅用于获取表头。")
@@ -1024,59 +812,38 @@ elif st.session_state.page == 'mapping':
                         st.session_state.sample_store['B'] = list(df.columns)
             cols_a = st.session_state.sample_store['A'] or []
             cols_b = st.session_state.sample_store['B'] or []
-        else:
-            st.info("🔒 系统默认模板为只读模式，无法修改配置或上传样例。如需修改，请先创建新模板。")
+        else: st.info("🔒 系统默认模板为只读模式，无法修改配置或上传样例。如需修改，请先创建新模板。")
 
         df_c = st.session_state.templates[st.session_state.editing_template_name]
-        
         def save_and_validate(edited_df):
             if is_default: return
             current_config = st.session_state.templates[st.session_state.editing_template_name]
-            
             for idx, row in edited_df.iterrows():
-                target = row['目标字段']
-                new_match = str(row['匹配字段']).strip()
-                
+                target = row['目标字段']; new_match = str(row['匹配字段']).strip()
                 mask = (current_config['所属表'] == row['所属表']) & (current_config['目标字段'] == target)
                 if not mask.any(): continue
-                
                 orig_idx = current_config[mask].index[0]
                 if new_match != str(current_config.at[orig_idx, '匹配字段']).strip():
                     st.session_state.templates[st.session_state.editing_template_name].at[orig_idx, '匹配字段'] = new_match
 
         t1, t2, t3 = st.tabs(["结果表3 (底表)", "结果表2 (结算)", "结果表1 (工时)"])
-        
-        current_options = []
-        if cols_a: current_options.extend(cols_a)
-        if cols_b: current_options.extend(cols_b)
-        current_options = list(dict.fromkeys(current_options))
+        current_options = list(dict.fromkeys(cols_a + cols_b))
         
         with t1: 
             df_t3 = df_c[df_c["所属表"]=="结果表3"]
-            
             st.markdown("#### 📂 Source A 字段映射 (工时统计)")
             df_a_subset = df_t3[df_t3["源表"] == "Source A"]
-            if not cols_a and not is_default:
-                st.warning("⚠️ 请先在上方上传 'Source A 工时统计' 样例数据以解锁此区域。")
-            edited_a = UIComponents.render_native_editor(
-                "Source A 配置", df_a_subset, is_default or not cols_a, cols_a
-            )
+            if not cols_a and not is_default: st.warning("⚠️ 请先在上方上传 'Source A 工时统计' 样例数据以解锁此区域。")
+            edited_a = UIComponents.render_native_editor("Source A 配置", df_a_subset, is_default or not cols_a, cols_a)
             if not is_default and edited_a is not None: save_and_validate(edited_a)
             
-            st.divider()
-            
-            st.markdown("#### 📂 Source B 字段映射 (差旅明细)")
+            st.divider(); st.markdown("#### 📂 Source B 字段映射 (差旅明细)")
             df_b_subset = df_t3[df_t3["源表"] == "Source B"]
-            if not cols_b and not is_default:
-                st.warning("⚠️ 请先在上方上传 'Source B 差旅明细' 样例数据以解锁此区域。")
-            edited_b = UIComponents.render_native_editor(
-                "Source B 配置", df_b_subset, is_default or not cols_b, cols_b
-            )
+            if not cols_b and not is_default: st.warning("⚠️ 请先在上方上传 'Source B 差旅明细' 样例数据以解锁此区域。")
+            edited_b = UIComponents.render_native_editor("Source B 配置", df_b_subset, is_default or not cols_b, cols_b)
             if not is_default and edited_b is not None: save_and_validate(edited_b)
             
-            st.divider()
-            
-            st.markdown("#### 🔒 系统锁定/公式计算字段")
+            st.divider(); st.markdown("#### 🔒 系统锁定/公式计算字段")
             df_lock_subset = df_t3[~df_t3["源表"].isin(["Source A", "Source B"])]
             UIComponents.render_native_editor("系统配置 (只读)", df_lock_subset, True, [])
         with t2: 
@@ -1096,7 +863,3 @@ elif st.session_state.page == 'mapping':
             with bc3:
                 if st.button("💾 确认生效", type="primary", use_container_width=True):
                     st.toast(f"模板 [{st.session_state.editing_template_name}] 已更新并校验通过", icon="✅")
-
-
-
-
