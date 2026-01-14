@@ -75,7 +75,7 @@ def inject_css():
             flex-direction: column;
         }
 
-        /* 2. 针对 Tertiary 按钮 (猫咪图标) 的特殊样式 */
+        /* 2. 针对 Tertiary 按钮的特殊样式 (如果以后还需要用) */
         button[kind="tertiary"] {
             border: none !important; 
             background: transparent !important; 
@@ -103,7 +103,7 @@ def inject_css():
         button[kind="tertiary"]:hover { 
             transform: scale(1.25) rotate(5deg); 
             background: transparent !important;
-            color: #58a6ff !important;
+            color: #ff7b72 !important;
             transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
         
@@ -583,17 +583,8 @@ class UIComponents:
                 st.write("") 
                 if st.button("重新运算", type="primary", use_container_width=True): trigger_recalc = True
             
-            # ====== 核心修复逻辑：Flex 占位符 ======
-            # 利用父容器的 Flex 属性，这个空的 div 会自动撑开所有剩余空间
-            st.markdown('<div style="flex: 1;"></div>', unsafe_allow_html=True)
+            # ====== 修改：删除了底部的猫咪/恶魔按钮 ======
             
-            # 猫咪按钮 - 无提示文案
-            if st.button("🐱", key="btn_cat_config", type="tertiary"):
-                st.session_state.page = 'mapping'; st.session_state.prank_solved = False; st.rerun()
-            
-            # 底部留白
-            st.markdown('<div style="height: 15px;"></div>', unsafe_allow_html=True)
-
             return current_params, trigger_recalc
 
     @staticmethod
@@ -702,7 +693,35 @@ inject_css()
 
 if st.session_state.page == 'main':
     current_params, manual_recalc = UIComponents.render_sidebar(st.session_state.threshold_error_flag)
-    st.title("😈 淡藤财务报表 Pro")
+    
+    # === 新的标题逻辑：恶魔Emoji就是入口 ===
+    st.markdown("""
+        <style>
+            .title-container {
+                font-size: 3rem;
+                font-weight: 700;
+                display: flex;
+                align-items: center;
+                margin-bottom: 1rem;
+            }
+            .trigger-link {
+                text-decoration: none;
+                color: inherit;
+                cursor: default; /* 鼠标不变成手型，伪装到底 */
+                margin-right: 10px;
+            }
+            .trigger-link:hover {
+                color: inherit;
+                text-decoration: none;
+            }
+        </style>
+        <div class="title-container">
+            <a href="?prank=1" target="_self" class="trigger-link">😈</a>
+            <span>淡藤财务报表 Pro</span>
+        </div>
+    """, unsafe_allow_html=True)
+    # =======================================
+
     with st.container(border=True):
         st.markdown("### 📂 数据源控制台")
         st.divider()
