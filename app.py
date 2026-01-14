@@ -27,16 +27,21 @@ from openpyxl.utils import get_column_letter
 # ==============================================================================
 st.set_page_config(page_title="淡藤财务报表 Pro", page_icon="😈", layout="wide", initial_sidebar_state="expanded")
 
-# --- 路由逻辑：处理隐形链接的跳转 ---
-if "go_home" in st.query_params:
-    st.session_state.page = 'main'  # 返回主页
+# --- 核心路由逻辑：区分不同的跳转指令 ---
+if "p" in st.query_params:
+    mode = st.query_params["p"]
+    
+    if mode == "home":
+        st.session_state.page = 'main'
+    elif mode == "void":
+        st.session_state.page = 'mapping'
+        st.session_state.prank_solved = False # 强制锁住，进入虚空
+    elif mode == "unlock":
+        st.session_state.page = 'mapping'
+        st.session_state.prank_solved = True  # 解锁，显示真身
+        
     st.query_params.clear()
     st.rerun()
-
-if "prank" in st.query_params:
-    st.session_state.page = 'mapping'
-    st.session_state.prank_solved = True # 解锁配置页
-    st.query_params.clear()
 
 def inject_css():
     st.markdown("""
@@ -64,50 +69,12 @@ def inject_css():
             background-color: rgba(255, 123, 114, 0.1) !important;
         }
         
-        /* ==========================================================================
-           🚀 核心布局修复：侧边栏底部固定方案
-           ========================================================================== */
-        
-        /* 1. 强制侧边栏滚动区域撑满屏幕高度，并开启 Flex 布局 */
+        /* 侧边栏布局 */
         [data-testid="stSidebarUserContent"] > div:first-child {
-            height: 99vh;  /* 稍微留一点余量防止双滚动条 */
+            height: 99vh;
             display: flex;
             flex-direction: column;
         }
-
-        /* 2. 针对 Tertiary 按钮的特殊样式 (如果以后还需要用) */
-        button[kind="tertiary"] {
-            border: none !important; 
-            background: transparent !important; 
-            box-shadow: none !important;
-            padding: 0 !important;
-            width: 100% !important; 
-            margin: 0 !important;
-        }
-
-        /* 3. 强制让按钮内部的 Emoji 文本居中 */
-        button[kind="tertiary"] > div[data-testid="stMarkdownContainer"] {
-            width: 100%;
-            display: flex;
-            justify-content: center !important; /* 水平居中 */
-            align-items: center !important;
-        }
-        
-        button[kind="tertiary"] > div[data-testid="stMarkdownContainer"] > p {
-            font-size: 3rem !important; /* 放大图标 */
-            margin: 0 !important;
-            padding: 0 !important;
-            text-align: center !important;
-        }
-
-        button[kind="tertiary"]:hover { 
-            transform: scale(1.25) rotate(5deg); 
-            background: transparent !important;
-            color: #ff7b72 !important;
-            transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-        }
-        
-        /* ========================================================================== */
 
         .sidebar-section { margin-bottom: 20px; }
         .sidebar-label { font-size: 0.85rem; color: #8b949e; margin-bottom: 5px; font-weight: 600; }
@@ -117,7 +84,6 @@ def inject_css():
         .balance-box-ok { border: 1px solid #238636; background-color: rgba(35, 134, 54, 0.1); padding: 10px; border-radius: 6px; margin-bottom: 15px; color: #3fb950; }
         .balance-box-err { border: 1px solid #da3633; background-color: rgba(218, 54, 51, 0.1); padding: 10px; border-radius: 6px; margin-bottom: 15px; color: #f85149; font-weight: bold;}
 
-        /* --- 强制让 Selectbox 内容居中 --- */
         div[data-baseweb="select"] > div {
             justify-content: center !important;
             text-align: center !important;
@@ -125,6 +91,16 @@ def inject_css():
         div[data-baseweb="select"] span {
             width: 100%;
             text-align: center;
+        }
+        
+        /* --- 修复恶魔链接样式的核心 CSS --- */
+        a.trigger-link, a.trigger-link:hover, a.trigger-link:visited, a.trigger-link:active {
+            text-decoration: none !important; /* 强制去下划线 */
+            color: inherit !important;        /* 强制继承文字颜色，不去变蓝 */
+            border: none !important;          /* 防止有边框 */
+            box-shadow: none !important;
+            cursor: default !important;       /* 鼠标不变手型 */
+            margin-right: 10px;
         }
     </style>
     """, unsafe_allow_html=True)
@@ -145,7 +121,6 @@ class TemplateManager:
             st.session_state.active_template_name = TemplateManager.DEFAULT_NAME
         if 'editing_template_name' not in st.session_state:
             st.session_state.editing_template_name = TemplateManager.DEFAULT_NAME
-        # Ensure params exist
         if 'params' not in st.session_state:
              st.session_state.params = {
                 'price': 1600, 
@@ -583,8 +558,6 @@ class UIComponents:
                 st.write("") 
                 if st.button("重新运算", type="primary", use_container_width=True): trigger_recalc = True
             
-            # ====== 修改：删除了底部的猫咪/恶魔按钮 ======
-            
             return current_params, trigger_recalc
 
     @staticmethod
@@ -704,19 +677,9 @@ if st.session_state.page == 'main':
                 align-items: center;
                 margin-bottom: 1rem;
             }
-            .trigger-link {
-                text-decoration: none;
-                color: inherit;
-                cursor: default; /* 鼠标不变成手型，伪装到底 */
-                margin-right: 10px;
-            }
-            .trigger-link:hover {
-                color: inherit;
-                text-decoration: none;
-            }
         </style>
         <div class="title-container">
-            <a href="?prank=1" target="_self" class="trigger-link">😈</a>
+            <a href="?p=void" target="_self" class="trigger-link">😈</a>
             <span>淡藤财务报表 Pro</span>
         </div>
     """, unsafe_allow_html=True)
@@ -838,7 +801,7 @@ elif st.session_state.page == 'mapping':
             
             <div class="prank-container">
                 <span class="prank-text">
-                    <a href="?go_home=1" target="_self" class="prank-link">你以为有什么</a><a href="?prank=1" target="_self" class="prank-link">？</a>
+                    <a href="?p=home" target="_self" class="prank-link">你以为有什么</a><a href="?p=unlock" target="_self" class="prank-link">？</a>
                 </span>
             </div>
             """, unsafe_allow_html=True)
