@@ -23,20 +23,19 @@ from openpyxl.styles import Border, Side, Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 # ==============================================================================
-# Zone 0: 全局配置 & 样式注入 (核心修复)
+# Zone 0: 全局配置 & 路由控制 & 样式注入
 # ==============================================================================
 st.set_page_config(page_title="淡藤财务报表 Pro", page_icon="😈", layout="wide", initial_sidebar_state="expanded")
 
-# --- 新增的代码块 START ---
+# --- 路由逻辑：处理隐形链接的跳转 ---
 if "go_home" in st.query_params:
-    st.session_state.page = 'main'  # 切换回主页状态
-    st.query_params.clear()         # 清除URL参数
-    st.rerun()                      # 立即刷新
-# --- 新增的代码块 END ---
+    st.session_state.page = 'main'  # 返回主页
+    st.query_params.clear()
+    st.rerun()
 
 if "prank" in st.query_params:
     st.session_state.page = 'mapping'
-    st.session_state.prank_solved = True
+    st.session_state.prank_solved = True # 解锁配置页
     st.query_params.clear()
 
 def inject_css():
@@ -787,16 +786,25 @@ if st.session_state.page == 'main':
 elif st.session_state.page == 'mapping':
     if 'prank_solved' not in st.session_state: st.session_state.prank_solved = False
     if not st.session_state.prank_solved:
-        c1, c2 = st.columns([9, 1]); c1.write("")
-        if c2.button("⬅️", key="back_from_prank", type="tertiary", use_container_width=True): st.session_state.page = 'main'; st.rerun()
-        st.markdown("""<style>.prank-container { display: flex; justify-content: center; margin-top: 150px; } .prank-text { font-size: 2.5rem; color: #30363d; font-family: 'Courier New', monospace; cursor: default; } a.prank-link { text-decoration: none; color: inherit; cursor: text; } a.prank-link:hover { color: inherit; text-decoration: none; }</style><div class="prank-container"><span class="prank-text">你以为有什么<a href="?prank=1" target="_self" class="prank-link">？</a></span></div>""", unsafe_allow_html=True)
-    
-    # --- 修改后的 Markdown 代码 START ---
+        # 删除旧的返回按钮，新的返回逻辑包含在隐形链接中
+        # c1, c2 = st.columns([9, 1]); c1.write("")
+        # if c2.button("⬅️", key="back_from_prank", type="tertiary", use_container_width=True): st.session_state.page = 'main'; st.rerun()
+        
+        # --- 隐形链接交互逻辑 START ---
         st.markdown("""
             <style>
-                .prank-container { display: flex; justify-content: center; margin-top: 150px; } 
-                .prank-text { font-size: 2.5rem; color: #30363d; font-family: 'Courier New', monospace; cursor: default; } 
-                
+                .prank-container { 
+                    /* margin-top: 150px;  删除顶部边距，使其靠上显示 */
+                    display: flex; 
+                    justify-content: center; 
+                    padding-top: 2rem; /* 添加一点顶部内边距 */
+                } 
+                .prank-text { 
+                    font-size: 2rem; /* 调整字体大小 */
+                    color: #30363d; 
+                    font-family: 'Courier New', monospace; 
+                    cursor: default; 
+                } 
                 /* 复用这个样式，让链接看起来完全像普通文本 */
                 a.prank-link { text-decoration: none; color: inherit; cursor: text; } 
                 a.prank-link:hover { color: inherit; text-decoration: none; }
@@ -804,13 +812,11 @@ elif st.session_state.page == 'mapping':
             
             <div class="prank-container">
                 <span class="prank-text">
-                    <a href="?go_home=1" target="_self" class="prank-link">你以为有什么</a>
-                    <a href="?prank=1" target="_self" class="prank-link">？</a>
+                    <a href="?go_home=1" class="prank-link">你以为有什么</a><a href="?prank=1" class="prank-link">？</a>
                 </span>
             </div>
             """, unsafe_allow_html=True)
-        # --- 修改后的 Markdown 代码 END ---
-
+        # --- 隐形链接交互逻辑 END ---
     else:
         all_templates = TemplateManager.get_all_names() 
         with st.sidebar:
@@ -937,4 +943,3 @@ elif st.session_state.page == 'mapping':
             with bc3:
                 if st.button("💾 确认生效", type="primary", use_container_width=True):
                     st.toast(f"模板 [{st.session_state.editing_template_name}] 已更新并校验通过", icon="✅")
-
