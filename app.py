@@ -23,7 +23,7 @@ from openpyxl.styles import Border, Side, Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
 # ==============================================================================
-# Zone 0: 全局配置 & 样式注入
+# Zone 0: 全局配置 & 样式注入 (已修复侧边栏布局)
 # ==============================================================================
 st.set_page_config(page_title="淡藤财务报表 Pro", page_icon="😈", layout="wide", initial_sidebar_state="expanded")
 
@@ -58,37 +58,43 @@ def inject_css():
             background-color: rgba(255, 123, 114, 0.1) !important;
         }
         
+        /* --- 核心修复：侧边栏布局 --- */
+        /* 1. 选中侧边栏容器，强制高度撑满 */
+        section[data-testid="stSidebar"] > div {
+            height: 100vh;
+        }
+        /* 2. 选中侧边栏内部的主Flex容器，强制设置为纵向Flex布局 */
+        section[data-testid="stSidebar"] > div > div:last-child > div {
+            height: 98vh;
+            display: flex;
+            flex-direction: column;
+            /* 配合 margin-top: auto 使用 */
+        }
+
         /* --- 核心修改：让 tertiary 按钮完全融入背景，像个图标，并且居中 --- */
         button[kind="tertiary"] {
             border: none !important; 
             background: transparent !important; 
             box-shadow: none !important;
-            font-size: 2.5rem !important; /* 图标大一点 */
+            font-size: 3rem !important; /* 图标放大 */
             padding: 0 !important;
             width: 100% !important; /* 占满宽度以便居中 */
+            margin: 0 auto !important;
             display: flex !important;
             justify-content: center !important;
             align-items: center !important;
-            opacity: 0.7;
-            transition: all 0.2s;
-            margin-top: 10px;
+            opacity: 0.6;
+            transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
         button[kind="tertiary"]:hover { 
             opacity: 1.0;
-            transform: scale(1.2); 
+            transform: scale(1.25) rotate(5deg); 
             background: transparent !important;
             color: #58a6ff !important;
         }
         button[kind="tertiary"]:focus {
             box-shadow: none !important;
             outline: none !important;
-        }
-        
-        /* --- 侧边栏布局 Hack: 强制侧边栏垂直块占满屏幕高度 --- */
-        [data-testid="stSidebar"] [data-testid="stVerticalBlock"] {
-            min-height: 95vh; /* 强制高度 */
-            display: flex;
-            flex-direction: column;
         }
         
         .sidebar-section { margin-bottom: 20px; }
@@ -565,11 +571,15 @@ class UIComponents:
                 st.write("") 
                 if st.button("重新运算", type="primary", use_container_width=True): trigger_recalc = True
             
-            # --- 布局优化：插入一个弹性占位符，将下方的猫咪按钮顶到底部 ---
-            st.markdown('<div style="flex: 1;"></div>', unsafe_allow_html=True)
+            # --- 布局优化修复：使用 margin-top: auto 配合 flex column 将按钮挤压到底部 ---
+            st.markdown('<div style="margin-top: auto;"></div>', unsafe_allow_html=True)
             
             if st.button("🐱", key="btn_cat_config", type="tertiary", help="进入规则配置中心"):
                 st.session_state.page = 'mapping'; st.session_state.prank_solved = False; st.rerun()
+            
+            # 增加底部留白
+            st.markdown('<div style="height: 20px;"></div>', unsafe_allow_html=True)
+
             return current_params, trigger_recalc
 
     @staticmethod
@@ -683,12 +693,11 @@ if st.session_state.page == 'main':
         st.markdown("### 📂 数据源控制台")
         st.divider()
         
-        # --- NEW LOCATION FOR TEMPLATE SELECTOR (Below Title) ---
+        # --- Template Selector ---
         all_templates = TemplateManager.get_all_names()
         if st.session_state.active_template_name not in all_templates: 
             st.session_state.active_template_name = TemplateManager.DEFAULT_NAME
         
-        # 使用 1.5 : 8.5 的比例，模拟约 8 个字符宽度的视觉效果
         c_sel, c_empty = st.columns([1.5, 8.5])
         with c_sel:
             selected_tpl = st.selectbox(
@@ -701,7 +710,7 @@ if st.session_state.page == 'main':
             
         if selected_tpl != st.session_state.active_template_name:
             st.session_state.active_template_name = selected_tpl; st.session_state.is_calculated = False; st.rerun()
-        # --------------------------------------------------------
+        # -------------------------
 
         c1, c2 = st.columns(2)
         with c1: UIComponents.render_file_slot('A', "Source A: 投入明细 (工时)", st.session_state.data_store)
@@ -780,7 +789,6 @@ elif st.session_state.page == 'mapping':
                     st.session_state.editing_template_name = tpl_name; st.session_state.sample_store = {'A': None, 'B': None}; st.rerun()
             st.divider()
             
-            # --- UI OPTIMIZATION: Use expander instead of popover to ensure width consistency ---
             with st.expander("➕ 新建模板", expanded=False):
                 new_tpl_name = st.text_input("模板名称", placeholder="1-8个字符", max_chars=8)
                 if st.button("创建", key="create_new_tpl", use_container_width=True):
@@ -791,15 +799,12 @@ elif st.session_state.page == 'mapping':
                             st.success(f"模板 {new_tpl_name} 已创建"); time.sleep(0.5); st.rerun()
                         else: st.error("长度需在1-8字符之间")
                     elif new_tpl_name: st.error("名称已存在")
-            # -----------------------------------------------------------------------------------
 
         c1, c2 = st.columns([8, 2], vertical_alignment="center")
         
-        # --- NEW LOGIC: Hide title if it's the default template ---
         is_default = (st.session_state.editing_template_name == TemplateManager.DEFAULT_NAME)
         if not is_default:
             c1.markdown(f"<div class='nav-header'>📏 正在编辑: {st.session_state.editing_template_name}</div>", unsafe_allow_html=True)
-        # ----------------------------------------------------------
         
         if c2.button("⬅️ 返回主页", type="tertiary", use_container_width=True): st.session_state.page = 'main'; st.rerun()
         st.markdown("<hr style='margin-top:0; border-color:#30363d;'>", unsafe_allow_html=True)
