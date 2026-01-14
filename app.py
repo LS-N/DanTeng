@@ -424,12 +424,28 @@ class WordGenerator:
         tr = row._tr; trPr = tr.get_or_add_trPr(); trHeight = OxmlElement('w:trHeight')
         trHeight.set(qn('w:val'), str(int(height_cm * 567))); trHeight.set(qn('w:hRule'), "atLeast"); trPr.append(trHeight)
 
+    # --- 新增：强制设置表格宽度为100%的辅助函数 ---
+    @staticmethod
+    def set_table_width_100(table):
+        # 获取表格属性元素
+        tbl_pr = table._element.tblPr
+        # 如果不存在宽度设置，则创建一个
+        tbl_w = tbl_pr.find(qn('w:tblW'))
+        if tbl_w is None:
+            tbl_w = OxmlElement('w:tblW')
+            tbl_pr.append(tbl_w)
+        # 设置宽度为 5000 pct (即 100%)
+        tbl_w.set(qn('w:w'), '5000')
+        tbl_w.set(qn('w:type'), 'pct')
+
     @staticmethod
     def _create_base_doc(purchase_comp, sales_comp, dept_name, period_text):
         doc = docx.Document()
         section = doc.sections[0]
         section.top_margin = Cm(2.0); section.bottom_margin = Cm(2.0)
         section.left_margin = Cm(2.0); section.right_margin = Cm(2.0)
+        
+        # --- 标题 ---
         title_line_1 = f"{purchase_comp}与云软件事业部-实施交付部"
         title_line_2 = f"{period_text}项目交付与运维费用结算账单"
         p1 = doc.add_paragraph(); p1.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -441,10 +457,18 @@ class WordGenerator:
         try: run2.font.name = 'SimSun'; run2._element.rPr.rFonts.set(qn('w:eastAsia'), 'SimSun')
         except: pass
         doc.add_paragraph() 
+        
+        # --- 表格 0：结算账单 ---
         table0 = doc.add_table(rows=6, cols=10); table0.style = 'Table Grid'
+        
+        # 应用 100% 宽度 (修复点 1)
+        WordGenerator.set_table_width_100(table0)
+        
+        # 虽然设置了100%，但保留相对比例设置，这样列宽比例依然好看
         col_widths = [1.3, 1.3, 1.3, 1.6, 1.6, 1.6, 1.6, 1.8, 1.3, 2.0]
         for row in table0.rows:
             for idx, width in enumerate(col_widths): row.cells[idx].width = Cm(width)
+            
         WordGenerator.set_row_height(table0.rows[0], 1.63)
         c0 = table0.rows[0].cells[0].merge(table0.rows[0].cells[9])
         WordGenerator.set_cell_style(c0, title_line_1 + "\n" + title_line_2, font_size=10, bold=True)
@@ -469,11 +493,27 @@ class WordGenerator:
         p_date = c_sign.add_paragraph("日期：    年    月    日        "); p_date.alignment = WD_ALIGN_PARAGRAPH.RIGHT
         try: p_date.runs[0].font.name = 'SimSun'; p_date.runs[0]._element.rPr.rFonts.set(qn('w:eastAsia'), 'SimSun')
         except: pass
+        
         doc.add_paragraph("\n")
+        
+        # --- 修复点 2: 添加“费用详单：”标题 ---
+        p_detail_header = doc.add_paragraph()
+        run_detail = p_detail_header.add_run("费用详单：")
+        run_detail.font.bold = True
+        run_detail.font.size = Pt(10) # 保持和表格内文字大小一致或略大
+        try: run_detail.font.name = 'SimSun'; run_detail._element.rPr.rFonts.set(qn('w:eastAsia'), 'SimSun')
+        except: pass
+        
+        # --- 表格 1：费用详单 ---
         table1 = doc.add_table(rows=1, cols=11); table1.style = 'Table Grid'
+        
+        # 应用 100% 宽度 (修复点 1)
+        WordGenerator.set_table_width_100(table1)
+        
         t1_widths = [0.9, 1.2, 1.5, 1.5, 1.0, 1.0, 1.0, 2.2, 2.3, 2.3, 2.6]
         for row in table1.rows:
             for idx, width in enumerate(t1_widths): row.cells[idx].width = Cm(width)
+            
         headers_1 = ['人员', '人事\n范围', '项目\n名称', '合同\n名称', '销售\n人员', '销售所\n在大区', '支持\n人天', '人力\n费用', '差旅\n补助', '差旅平\n台费用', '总费用\n（元）']
         for i, text in enumerate(headers_1): WordGenerator.set_cell_style(table1.rows[0].cells[i], text)
         return doc, table0, table1
@@ -971,3 +1011,4 @@ elif st.session_state.page == 'mapping':
             with bc3:
                 if st.button("💾 确认生效", type="primary", use_container_width=True):
                     st.toast(f"模板 [{st.session_state.editing_template_name}] 已更新并校验通过", icon="✅")
+
