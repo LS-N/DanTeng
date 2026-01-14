@@ -407,69 +407,84 @@ class DataEngine:
 
 class WordGenerator:
     @staticmethod
+    def get_visual_length(text):
+        """
+        计算字符串的视觉长度：
+        中文/全角符号 = 1.8 单位
+        数字/英文 = 1.0 单位
+        """
+        length = 0
+        s_text = str(text)
+        for char in s_text:
+            if '\u4e00' <= char <= '\u9fff': # 中文范围
+                length += 1.8
+            else:
+                length += 1.0
+        return length
+
+    @staticmethod
     def set_cell_style(cell, text, font_size=9, bold=False, align="center"):
+        # 清空原有内容
         cell.text = ""
         paragraph = cell.paragraphs[0]
-        # 优化：长文本列默认左对齐，数字和短文本居中，视觉更整齐
-        if align == "auto":
-            # 简单的自动判断：如果包含中文且长度较长，建议左对齐
-            s_text = str(text)
-            if len(s_text) > 8 and not re.match(r'^[\d\.,]+$', s_text):
-                paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
-            else:
-                paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        elif align == "center": paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
-        elif align == "left": paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
-        elif align == "right": paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        
+        # --- 核心修改：强制所有内容全居中 ---
+        # 之前有自动左对齐逻辑，现已全部移除，满足您的居中需求
+        paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         
         run = paragraph.add_run(str(text))
         run.font.bold = bold; run.font.size = Pt(font_size)
         try: run.font.name = 'SimSun'; run._element.rPr.rFonts.set(qn('w:eastAsia'), 'SimSun')
         except: pass
+        
+        # 垂直居中
         cell.vertical_alignment = WD_ALIGN_VERTICAL.CENTER
 
     @staticmethod
     def set_row_height(row, height_cm):
         tr = row._tr; trPr = tr.get_or_add_trPr(); trHeight = OxmlElement('w:trHeight')
-        trHeight.set(qn('w:val'), str(int(height_cm * 567))); trHeight.set(qn('w:hRule'), "atLeast"); trPr.append(trHeight)
+        # 使用 atLeast (最小值) 而不是 exact (固定值)，防止内容换行后被遮挡
+        trHeight.set(qn('w:val'), str(int(height_cm * 567)))
+        trHeight.set(qn('w:hRule'), "atLeast") 
+        trPr.append(trHeight)
 
     @staticmethod
     def set_table_width_100(table):
+        """强制表格宽度铺满页面"""
         tbl_pr = table._element.tblPr
         tbl_w = tbl_pr.find(qn('w:tblW'))
         if tbl_w is None:
             tbl_w = OxmlElement('w:tblW')
             tbl_pr.append(tbl_w)
+        # 5000 pct 代表 100% 宽度
         tbl_w.set(qn('w:w'), '5000')
         tbl_w.set(qn('w:type'), 'pct')
 
     @staticmethod
     def calculate_smart_widths(group_df, headers):
         """
-        核心算法：根据数据内容动态计算列宽
+        智能列宽分配算法：
+        1. 扫描该组所有数据，找出每一列的最长内容。
+        2. 根据最长内容按比例分配页面总宽度。
         """
-        # A4纸除去边距(1.5cm*2)后可用宽度约为 18cm，保险起见设为 17.5cm
-        TOTAL_WIDTH = 17.5 
-        CHAR_WIDTH = 0.18 # 9pt字体每个字符大约占用的宽度(cm)
-        PADDING = 0.25    # 单元格左右缓冲(cm)
-
-        # 初始化每一列的最大长度（先放入表头长度）
-        # headers 是表头文字列表
-        max_lens = []
-        for h in headers:
-            # 表头如果是多行，取最长的一行
-            lines = str(h).split('\n')
-            max_line = max([len(l.encode('gbk'))/2 for l in lines]) # 粗略估算显示长度
-            max_lens.append(max_line)
-
-        # 遍历数据，更新最大长度
-        # group_df 的列序必须与 headers 对应：
-        # 人员, 人事范围, 项目名称, 合同主体, 销售人员, 销售所在大区, 支持人天, 人力费用, 差旅补助, 差旅平台费用, 总费用
+        # A4纸除去左右边距(1.5cm * 2)后，可用宽度约为 18cm
+        # 我们设定稍微保守一点的总宽，保证绝对不换行出界
+        TOTAL_PAGE_WIDTH = 17.6 
         
-        # 为了遍历方便，我们将dataframe转换为list of lists，且格式化数字
-        data_rows = []
+        col_count = len(headers)
+        max_visual_lens = [0.0] * col_count
+
+        # 1. 先把表头的长度算进去
+        for i, h in enumerate(headers):
+            # 表头可能有换行符，取最长的一行
+            lines = str(h).split('\n')
+            max_line_len = max([WordGenerator.get_visual_length(l) for l in lines])
+            max_visual_lens[i] = max(max_visual_lens[i], max_line_len)
+
+        # 2. 遍历所有数据行，更新每一列的最大视觉长度
         for _, row in group_df.iterrows():
-            r = [
+            # 注意：这里的顺序必须和 generate 方法中写入的顺序完全一致
+            vals = [
                 str(row['人员']), 
                 str(row['人事范围']), 
                 str(row['所属项目']), 
@@ -482,51 +497,31 @@ class WordGenerator:
                 f"{row['差旅费控平台']:.2f}",
                 f"{row['结算费用合计']:.2f}"
             ]
-            data_rows.append(r)
-            
-            for i, val in enumerate(r):
-                # 计算显示长度：中文字符占1，数字/英文占0.6左右，这里简化处理
-                # 使用 len(encode('gbk')) 可以较好区分中文(2byte)和英文(1byte)
-                try: length = len(str(val).encode('gbk')) * 0.6  # 修正系数
-                except: length = len(str(val))
-                if length > max_lens[i]:
-                    max_lens[i] = length
+            for i, val in enumerate(vals):
+                max_visual_lens[i] = max(max_visual_lens[i], WordGenerator.get_visual_length(val))
 
-        # 开始分配宽度
-        final_widths = [0.0] * 11
-        
-        # 1. 先锁定 "数字列" (索引6-10) 和 "短文本列" (索引0, 4, 5) 的宽度
-        # 这里的策略是：刚好包住内容 + Padding
-        fixed_indices = [0, 4, 5, 6, 7, 8, 9, 10]
-        
-        for i in fixed_indices:
-            # 计算所需宽度
-            calc_w = max_lens[i] * CHAR_WIDTH + PADDING
-            # 限制最小宽度，防止太窄
-            if i in [6, 7, 8, 9, 10]: min_w = 1.0 # 数字列最小1cm
-            else: min_w = 1.2 # 姓名等最小1.2cm
-            final_widths[i] = max(calc_w, min_w)
+        # 3. 增加一点缓冲 padding (每个单元格左右留白)
+        max_visual_lens = [x + 2.0 for x in max_visual_lens]
 
-        # 2. 计算剩余空间分配给 "长文本列" (索引1, 2, 3)
-        used_width = sum([final_widths[i] for i in fixed_indices])
-        remaining_width = TOTAL_WIDTH - used_width
+        # 4. 计算权重并分配宽度
+        total_score = sum(max_visual_lens)
+        final_widths = []
         
-        # 防止剩余空间为负（极端情况），给予保底值
-        if remaining_width < 3.0: remaining_width = 3.0
+        for score in max_visual_lens:
+            # 比例分配：(该列最大长度 / 所有列总长度) * 页面总宽
+            width = (score / total_score) * TOTAL_PAGE_WIDTH
             
-        # 按照 1:1.2:1 的比例分配给 人事范围、项目、合同
-        # 项目名称通常最长，给多一点权重
-        w_unit = remaining_width / 3.2
-        final_widths[1] = w_unit * 1.0 # 人事范围
-        final_widths[2] = w_unit * 1.2 # 项目名称
-        final_widths[3] = w_unit * 1.0 # 合同主体
+            # 5. 安全限制：防止列太窄或太宽
+            if width < 0.9: width = 0.9 # 最小宽度 0.9cm
+            final_widths.append(width)
 
         return final_widths
 
     @staticmethod
-    def _create_base_doc(purchase_comp, sales_comp, dept_name, period_text, t1_widths):
+    def _create_base_doc(purchase_comp, sales_comp, dept_name, period_text, dynamic_widths):
         doc = docx.Document()
         section = doc.sections[0]
+        # 调整页边距，最大化利用空间
         section.top_margin = Cm(1.5); section.bottom_margin = Cm(1.5)
         section.left_margin = Cm(1.5); section.right_margin = Cm(1.5)
         
@@ -543,12 +538,16 @@ class WordGenerator:
         except: pass
         doc.add_paragraph() 
         
-        # --- 表格 0：结算账单 (固定比例，无需太动态) ---
+        # --- 表格 0：结算账单 ---
+        # 需求：结果文档4中的结算账单表格要和费用详单表格一样，都是根据窗口调整
         table0 = doc.add_table(rows=6, cols=10); table0.style = 'Table Grid'
         WordGenerator.set_table_width_100(table0)
-        col_widths_0 = [1.3, 1.3, 1.3, 1.6, 1.6, 1.6, 1.6, 1.8, 1.3, 2.0]
+        
+        # 给结算汇总表也分配一个相对合理的固定比例，保证铺满
+        # 总和约 17.6
+        t0_widths = [1.5, 1.5, 1.5, 1.8, 1.8, 1.8, 1.8, 2.0, 1.5, 2.4]
         for row in table0.rows:
-            for idx, width in enumerate(col_widths_0): row.cells[idx].width = Cm(width)
+            for idx, width in enumerate(t0_widths): row.cells[idx].width = Cm(width)
             
         WordGenerator.set_row_height(table0.rows[0], 1.63)
         c0 = table0.rows[0].cells[0].merge(table0.rows[0].cells[9])
@@ -564,7 +563,7 @@ class WordGenerator:
         WordGenerator.set_row_height(table0.rows[3], 0.92)
         WordGenerator.set_row_height(table0.rows[4], 1.13)
         WordGenerator.set_cell_style(table0.rows[4].cells[0].merge(table0.rows[4].cells[2]), "项目所属区域")
-        WordGenerator.set_cell_style(table0.rows[4].cells[3].merge(table0.rows[4].cells[9]), str(dept_name), align="left")
+        WordGenerator.set_cell_style(table0.rows[4].cells[3].merge(table0.rows[4].cells[9]), str(dept_name), align="left") # 部门名称左对齐更符合阅读习惯
         WordGenerator.set_row_height(table0.rows[5], 4.17)
         WordGenerator.set_cell_style(table0.rows[5].cells[0].merge(table0.rows[5].cells[2]), "项目所属\n区域销售\n确认")
         c_sign = table0.rows[5].cells[3].merge(table0.rows[5].cells[9]); c_sign.text = ""
@@ -577,7 +576,7 @@ class WordGenerator:
         
         doc.add_paragraph("\n")
         
-        # --- 标题修复：费用详单 ---
+        # --- 补全标题：费用详单 ---
         p_detail_header = doc.add_paragraph()
         run_detail = p_detail_header.add_run("费用详单：")
         run_detail.font.bold = True
@@ -585,12 +584,12 @@ class WordGenerator:
         try: run_detail.font.name = 'SimSun'; run_detail._element.rPr.rFonts.set(qn('w:eastAsia'), 'SimSun')
         except: pass
         
-        # --- 表格 1：费用详单 (应用动态宽度) ---
+        # --- 表格 1：费用详单 (使用动态计算出的 widths) ---
         table1 = doc.add_table(rows=1, cols=11); table1.style = 'Table Grid'
         WordGenerator.set_table_width_100(table1)
         
         for row in table1.rows:
-            for idx, width in enumerate(t1_widths): row.cells[idx].width = Cm(width)
+            for idx, width in enumerate(dynamic_widths): row.cells[idx].width = Cm(width)
             
         headers_1 = ['人员', '人事\n范围', '项目\n名称', '合同\n名称', '销售\n人员', '销售所\n在大区', '支持\n人天', '人力\n费用', '差旅\n补助', '差旅平\n台费用', '总费用\n（元）']
         for i, text in enumerate(headers_1): WordGenerator.set_cell_style(table1.rows[0].cells[i], text, bold=True)
@@ -610,35 +609,31 @@ class WordGenerator:
         files_dict = {}
         grouped = df_t3.groupby(req)
         
-        # 预定义表头，用于计算宽度
+        # 定义表头，用于传入算法计算最大长度
         header_list = ['人员', '人事范围', '项目名称', '合同主体', '销售人员', '销售所在大区', '支持人天', '人力费用', '差旅补助', '差旅平台费用', '总费用']
 
         for (purch_comp, sales_comp, dept_name), group in grouped:
-            # === 核心修改：在生成文档前，针对该组数据计算最优列宽 ===
-            dynamic_widths = WordGenerator.calculate_smart_widths(group, header_list)
+            # === 核心调用：计算智能列宽 ===
+            smart_widths = WordGenerator.calculate_smart_widths(group, header_list)
             
-            # 传递计算好的 widths 给文档生成器
-            doc, table0, table1 = WordGenerator._create_base_doc(purch_comp, sales_comp, dept_name, period_str, dynamic_widths)
+            doc, table0, table1 = WordGenerator._create_base_doc(purch_comp, sales_comp, dept_name, period_str, smart_widths)
             
             for _, row in group.iterrows():
                 cells = table1.add_row().cells
+                # 全部使用默认 align="center" (在 set_cell_style 中已改为强制居中)
+                WordGenerator.set_cell_style(cells[0], row['人员'])
+                WordGenerator.set_cell_style(cells[1], row['人事范围'])
+                WordGenerator.set_cell_style(cells[2], row['所属项目'])
+                WordGenerator.set_cell_style(cells[3], row['合同主体'])
+                WordGenerator.set_cell_style(cells[4], row['销售人员'])
+                WordGenerator.set_cell_style(cells[5], row['销售部门']) 
                 
-                # 文本列：自动对齐 (长文本左对齐，短文本居中)
-                WordGenerator.set_cell_style(cells[0], row['人员'], align="center")
-                WordGenerator.set_cell_style(cells[1], row['人事范围'], align="auto")
-                WordGenerator.set_cell_style(cells[2], row['所属项目'], align="auto")
-                WordGenerator.set_cell_style(cells[3], row['合同主体'], align="auto")
-                WordGenerator.set_cell_style(cells[4], row['销售人员'], align="center")
-                WordGenerator.set_cell_style(cells[5], row['销售部门'], align="center") 
-                
-                # 数字列：全部居中或右对齐(Word表格一般居中看起来更均衡，也可以选right)
                 WordGenerator.set_cell_style(cells[6], f"{row['支持时间（人天）']:.2f}")
                 WordGenerator.set_cell_style(cells[7], f"{row['人力费用']:.2f}")
                 WordGenerator.set_cell_style(cells[8], f"{row['差旅补助']:.2f}")
                 WordGenerator.set_cell_style(cells[9], f"{row['差旅费控平台']:.2f}")
                 WordGenerator.set_cell_style(cells[10], f"{row['结算费用合计']:.2f}")
 
-            # ... (后续合计行逻辑保持不变)
             sum_days = group['支持时间（人天）'].sum()
             sum_man_cost = group['人力费用'].sum()
             total_cost = group['结算费用合计'].sum()
@@ -1101,6 +1096,7 @@ elif st.session_state.page == 'mapping':
             with bc3:
                 if st.button("💾 确认生效", type="primary", use_container_width=True):
                     st.toast(f"模板 [{st.session_state.editing_template_name}] 已更新并校验通过", icon="✅")
+
 
 
 
