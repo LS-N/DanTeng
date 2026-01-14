@@ -407,12 +407,17 @@ class DataEngine:
 
 class WordGenerator:
     @staticmethod
-    def set_cell_style(cell, text, font_size=10, bold=False, align="center"):
+    def set_cell_style(cell, text, font_size=9, bold=False, align="center"):
+        # 字体稍微调小一点点(9pt)，让表格能容纳更多内容而不显拥挤
         cell.text = ""
         paragraph = cell.paragraphs[0]
+        
+        # 优化对齐方式：文本列建议左对齐，数字列建议右对齐或居中
+        # 这里为了整齐，我们根据内容类型简单判断，或者保持居中
         if align == "center": paragraph.alignment = WD_ALIGN_PARAGRAPH.CENTER
         elif align == "left": paragraph.alignment = WD_ALIGN_PARAGRAPH.LEFT
         elif align == "right": paragraph.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+        
         run = paragraph.add_run(str(text))
         run.font.bold = bold; run.font.size = Pt(font_size)
         try: run.font.name = 'SimSun'; run._element.rPr.rFonts.set(qn('w:eastAsia'), 'SimSun')
@@ -424,17 +429,13 @@ class WordGenerator:
         tr = row._tr; trPr = tr.get_or_add_trPr(); trHeight = OxmlElement('w:trHeight')
         trHeight.set(qn('w:val'), str(int(height_cm * 567))); trHeight.set(qn('w:hRule'), "atLeast"); trPr.append(trHeight)
 
-    # --- 新增：强制设置表格宽度为100%的辅助函数 ---
     @staticmethod
     def set_table_width_100(table):
-        # 获取表格属性元素
         tbl_pr = table._element.tblPr
-        # 如果不存在宽度设置，则创建一个
         tbl_w = tbl_pr.find(qn('w:tblW'))
         if tbl_w is None:
             tbl_w = OxmlElement('w:tblW')
             tbl_pr.append(tbl_w)
-        # 设置宽度为 5000 pct (即 100%)
         tbl_w.set(qn('w:w'), '5000')
         tbl_w.set(qn('w:type'), 'pct')
 
@@ -442,8 +443,9 @@ class WordGenerator:
     def _create_base_doc(purchase_comp, sales_comp, dept_name, period_text):
         doc = docx.Document()
         section = doc.sections[0]
-        section.top_margin = Cm(2.0); section.bottom_margin = Cm(2.0)
-        section.left_margin = Cm(2.0); section.right_margin = Cm(2.0)
+        # 稍微减小边距，给表格更多横向空间
+        section.top_margin = Cm(1.5); section.bottom_margin = Cm(1.5)
+        section.left_margin = Cm(1.5); section.right_margin = Cm(1.5)
         
         # --- 标题 ---
         title_line_1 = f"{purchase_comp}与云软件事业部-实施交付部"
@@ -458,16 +460,12 @@ class WordGenerator:
         except: pass
         doc.add_paragraph() 
         
-        # --- 表格 0：结算账单 ---
+        # --- 表格 0：结算账单 (保持原样) ---
         table0 = doc.add_table(rows=6, cols=10); table0.style = 'Table Grid'
-        
-        # 应用 100% 宽度 (修复点 1)
         WordGenerator.set_table_width_100(table0)
-        
-        # 虽然设置了100%，但保留相对比例设置，这样列宽比例依然好看
-        col_widths = [1.3, 1.3, 1.3, 1.6, 1.6, 1.6, 1.6, 1.8, 1.3, 2.0]
+        col_widths_0 = [1.3, 1.3, 1.3, 1.6, 1.6, 1.6, 1.6, 1.8, 1.3, 2.0]
         for row in table0.rows:
-            for idx, width in enumerate(col_widths): row.cells[idx].width = Cm(width)
+            for idx, width in enumerate(col_widths_0): row.cells[idx].width = Cm(width)
             
         WordGenerator.set_row_height(table0.rows[0], 1.63)
         c0 = table0.rows[0].cells[0].merge(table0.rows[0].cells[9])
@@ -496,26 +494,39 @@ class WordGenerator:
         
         doc.add_paragraph("\n")
         
-        # --- 修复点 2: 添加“费用详单：”标题 ---
+        # --- 标题修复：费用详单 ---
         p_detail_header = doc.add_paragraph()
         run_detail = p_detail_header.add_run("费用详单：")
         run_detail.font.bold = True
-        run_detail.font.size = Pt(10) # 保持和表格内文字大小一致或略大
+        run_detail.font.size = Pt(11)
         try: run_detail.font.name = 'SimSun'; run_detail._element.rPr.rFonts.set(qn('w:eastAsia'), 'SimSun')
         except: pass
         
-        # --- 表格 1：费用详单 ---
+        # --- 表格 1：费用详单 (宽度优化版) ---
         table1 = doc.add_table(rows=1, cols=11); table1.style = 'Table Grid'
-        
-        # 应用 100% 宽度 (修复点 1)
         WordGenerator.set_table_width_100(table1)
         
-        t1_widths = [0.9, 1.2, 1.5, 1.5, 1.0, 1.0, 1.0, 2.2, 2.3, 2.3, 2.6]
+        # === 核心修改：列宽重新分配 ===
+        # 原逻辑：[0.9, 1.2, 1.5, 1.5, 1.0, 1.0, 1.0, 2.2, 2.3, 2.3, 2.6] (数字列太宽)
+        # 新逻辑：
+        # 1. 人员(1.0): 姓名一般2-3字，够用
+        # 2. 人事范围(2.2): 公司名很长，加宽！
+        # 3. 项目名称(2.4): 项目名很长，加宽！
+        # 4. 合同主体(2.4): 公司名很长，加宽！
+        # 5. 销售(1.2): 姓名，够用
+        # 6. 大区(1.2): "云软件销售部"等，够用
+        # 7. 人天(1.0): "12.00" 这种数字很短，1cm足够
+        # 8. 人力费(1.7): "19200.00" 约需1.5cm，给1.7cm防换行
+        # 9. 补助(1.5): 金额较小，1.5cm足够
+        # 10. 平台费(1.7): 金额中等
+        # 11. 总费(1.8): 金额最大，稍宽一点
+        t1_widths = [1.0, 2.2, 2.4, 2.4, 1.2, 1.2, 1.0, 1.7, 1.5, 1.7, 1.8]
+        
         for row in table1.rows:
             for idx, width in enumerate(t1_widths): row.cells[idx].width = Cm(width)
             
         headers_1 = ['人员', '人事\n范围', '项目\n名称', '合同\n名称', '销售\n人员', '销售所\n在大区', '支持\n人天', '人力\n费用', '差旅\n补助', '差旅平\n台费用', '总费用\n（元）']
-        for i, text in enumerate(headers_1): WordGenerator.set_cell_style(table1.rows[0].cells[i], text)
+        for i, text in enumerate(headers_1): WordGenerator.set_cell_style(table1.rows[0].cells[i], text, bold=True)
         return doc, table0, table1
 
     @staticmethod
@@ -537,12 +548,17 @@ class WordGenerator:
             
             for _, row in group.iterrows():
                 cells = table1.add_row().cells
+                # 姓名
                 WordGenerator.set_cell_style(cells[0], row['人员'])
-                WordGenerator.set_cell_style(cells[1], row['人事范围'])
-                WordGenerator.set_cell_style(cells[2], row['所属项目'])
-                WordGenerator.set_cell_style(cells[3], row['合同主体'])
+                # 长文本 - 左对齐更好看
+                WordGenerator.set_cell_style(cells[1], row['人事范围'], align="center") # 也可以尝试 left，但表格里center可能更整齐
+                WordGenerator.set_cell_style(cells[2], row['所属项目'], align="center")
+                WordGenerator.set_cell_style(cells[3], row['合同主体'], align="center")
+                
                 WordGenerator.set_cell_style(cells[4], row['销售人员'])
                 WordGenerator.set_cell_style(cells[5], row['销售部门']) 
+                
+                # 数字列
                 WordGenerator.set_cell_style(cells[6], f"{row['支持时间（人天）']:.2f}")
                 WordGenerator.set_cell_style(cells[7], f"{row['人力费用']:.2f}")
                 WordGenerator.set_cell_style(cells[8], f"{row['差旅补助']:.2f}")
@@ -553,6 +569,7 @@ class WordGenerator:
             sum_man_cost = group['人力费用'].sum()
             total_cost = group['结算费用合计'].sum()
             
+            # 结算表格填数
             WordGenerator.set_cell_style(table0.rows[3].cells[0], f"{sum_days:.2f}") 
             WordGenerator.set_cell_style(table0.rows[3].cells[1], "-")
             WordGenerator.set_cell_style(table0.rows[3].cells[2], "-")
@@ -1011,4 +1028,5 @@ elif st.session_state.page == 'mapping':
             with bc3:
                 if st.button("💾 确认生效", type="primary", use_container_width=True):
                     st.toast(f"模板 [{st.session_state.editing_template_name}] 已更新并校验通过", icon="✅")
+
 
